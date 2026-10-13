@@ -15,6 +15,8 @@ yukarı/aşağı kaydırınca tekrar OCR yapılmadan anında görünür.
 from __future__ import annotations
 
 import queue
+import re
+from difflib import SequenceMatcher
 import json
 import threading
 import time
@@ -66,6 +68,29 @@ def _overlap_ratio(a: dict, b: dict) -> float:
     ix = max(0, min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"]))
     iy = max(0, min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"]))
     return (ix * iy) / max(1.0, min(a["w"] * a["h"], b["w"] * b["h"]))
+
+
+def _more_complete(new: dict, old: dict) -> bool:
+    """Only replace the same English passage when a reread preserves its words.
+
+    Length alone is not quality: require matching language/panel, spatial
+    containment and almost all old words in order, plus at least two new words.
+    """
+    if new.get('source_lang') != 'en' or old.get('source_lang') != 'en':
+        return False
+    if new.get('panel') != old.get('panel'):
+        return False
+    old_area, new_area = old['w'] * old['h'], new['w'] * new['h']
+    ix = max(0, min(new['x'] + new['w'], old['x'] + old['w']) - max(new['x'], old['x']))
+    iy = max(0, min(new['y'] + new['h'], old['y'] + old['h']) - max(new['y'], old['y']))
+    if ix * iy < old_area * .85 or not old_area * .9 <= new_area <= old_area * 3:
+        return False
+    before = re.findall(r"[a-z0-9]+", old.get('src', '').lower())
+    after = re.findall(r"[a-z0-9]+", new.get('src', '').lower())
+    if len(before) < 2 or len(after) < len(before) + 2:
+        return False
+    matches = sum(b.size for b in SequenceMatcher(None, before, after, autojunk=False).get_matching_blocks())
+    return matches >= len(before) * .9
 
 
 class TranslationWorker(QObject):
@@ -394,9 +419,15 @@ class TranslationWorker(QObject):
             if gen != self._gen:
                 continue
             for it in items:
-                if any(_overlap_ratio(it, e) > 0.5 for e in self.content_blocks):
-                    continue
-                self.content_blocks.append(it)
+                overlaps = [e for e in self.content_blocks if _overlap_ratio(it, e) > 0.5]
+                if overlaps:
+                    # Never let a broad OCR box collapse neighboring passages.
+                    if len(overlaps) != 1 or not _more_complete(it, overlaps[0]):
+                        continue
+                    index = self.content_blocks.index(overlaps[0])
+                    self.content_blocks[index] = it
+                else:
+                    self.content_blocks.append(it)
                 if self._context_enabled:
                     self._session_context.remember(it['src'], it['text'], LANGS[it['source_lang']]['nllb'], panel=it.get('panel'))
                 changed = True

@@ -97,6 +97,7 @@ class Settings:
     box_padding: int = 4
     overlay_visible: bool = True
     theme: str = "navy"
+    panel_theme: str = "green"
     show_system_usage: bool = True
     show_gpu_usage: bool = True
     show_vram_usage: bool = False
@@ -140,6 +141,9 @@ class Settings:
                 s.ocr_engine = "auto"
             if old_version < 6:
                 s.paddle_mobile = True
+        s.panel_theme = {"glass_dark": "green", "glass_light": "white"}.get(s.panel_theme, s.panel_theme)
+        if s.panel_theme not in ("green", "white", "navy", "black", "sepia"):
+            s.panel_theme = "green"
         if s.source_lang not in LANGS:
             s.source_lang = "en"
         if s.ocr_engine not in ('auto', 'manga_ocr', 'paddleocr'):

@@ -317,6 +317,8 @@ class OCREngine:
                     weak_boxes.append(box)
         if self.lang in ("zh", "zh_tw", "ja"):
             self._retry_paddle_regions(rgb, boxes, weak_boxes)
+        elif self.lang == "en" and bubbles:
+            self._retry_english_bubbles(rgb, boxes, weak_boxes, bubbles, edge)
         panels = detect_panels(rgb) if panels is None else panels
         blocks: list[OCRBlock] = []
         for group in self._layout_groups(boxes, bubbles, panels):
@@ -399,6 +401,83 @@ class OCREngine:
             out.extend(recovered if inside_found else [(rect, text, score)])
         return {"rec_boxes": [r for r, t, s in out], "rec_texts": [t for r, t, s in out],
                 "rec_scores": [s for r, t, s in out]}
+
+    def _retry_english_bubbles(self, rgb, boxes, weak_boxes, bubbles, edge):
+        """Recover missed English lines in at most two complete, light balloons.
+
+        Uncovered letter-sized ink (or a low-confidence line) triggers one local
+        OCR pass. Keep strong existing lines; never retry a clipped balloon or
+        accept scenery outside its contour. A failed optional pass is harmless.
+        """
+        import cv2
+
+        H, W = rgb.shape[:2]
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+        self.last_english_retry_count = 0
+        self.last_english_recovered_count = 0
+        for balloon in sorted(bubbles, key=lambda b: (b.y1, b.x1)):
+            if self.last_english_retry_count >= 2:
+                break
+            x1, y1, x2, y2 = balloon.x1, balloon.y1, balloon.x2, balloon.y2
+            if (x1 <= edge or y1 <= edge or x2 >= W - edge or y2 >= H - edge
+                    or (x2 - x1) * (y2 - y1) > W * H * .45):
+                continue
+            inside = [b for b in boxes if bubble_id(b, [balloon], .75) is not None]
+            weak = [b for b in weak_boxes if bubble_id(b, [balloon], .75) is not None]
+            mask = np.zeros((y2 - y1, x2 - x1), np.uint8)
+            if balloon.contour is None:
+                mask[:] = 255
+            else:
+                contour = balloon.contour - np.array([[[x1, y1]]], dtype=np.int32)
+                cv2.drawContours(mask, [contour], -1, 255, -1)
+            # Remove the balloon outline before looking for missing letters.
+            mask = cv2.erode(mask, np.ones((9, 9), np.uint8), borderType=cv2.BORDER_CONSTANT, borderValue=0)
+            local_gray = gray[y1:y2, x1:x2]
+            if not np.any(mask) or np.mean(local_gray[mask > 0] > 205) < .70:
+                continue
+            ink = ((local_gray < 160) & (mask > 0)).astype(np.uint8)
+            for old in inside + weak:
+                a, b, c, d = self._clamp(old.x1 - x1 - 3, old.y1 - y1 - 3,
+                                         old.x2 - x1 + 3, old.y2 - y1 + 3,
+                                         x2 - x1, y2 - y1)
+                ink[b:d, a:c] = 0
+            _, _, stats, centers = cv2.connectedComponentsWithStats(ink)
+            letter_height = float(np.median([b.h for b in inside + weak])) if inside or weak else 24.0
+            letters = [centers[i] for i, (_, _, w, h, area) in enumerate(stats[1:], 1)
+                       if 3 <= h <= min(64, max(16, letter_height * 1.5))
+                       and 2 <= w <= max(20, letter_height * 2) and area >= 6]
+            # Three aligned components distinguish an unread line from speckles.
+            missing_line = any(sum(abs(a[1] - b[1]) <= max(5, letter_height * .5)
+                                   for b in letters) >= 3 for a in letters)
+            if not weak and not missing_line:
+                continue
+            self.last_english_retry_count += 1
+            try:
+                result = next(iter(self.paddle.predict(np.ascontiguousarray(rgb[y1:y2, x1:x2]))))
+                data = getattr(result, "json", result)
+                if isinstance(data, str):
+                    data = json.loads(data)
+                data = data.get("res", data) if isinstance(data, dict) else {}
+                for rect, text, score in zip(data.get('rec_boxes', []), data.get('rec_texts', []), data.get('rec_scores', [])):
+                    if float(score) < max(.85, self.s.min_confidence) or not is_meaningful(str(text), 'en'):
+                        continue
+                    a, b, c, d = self._clamp(*rect, x2 - x1, y2 - y1)
+                    if min(c - a, d - b) < self.s.min_box_size:
+                        continue
+                    new = Box(x1 + a, y1 + b, x1 + c, y1 + d, str(text), float(score))
+                    if bubble_id(new, [balloon], .75) is None:
+                        continue
+                    overlaps = [old for old in boxes if
+                                max(0, min(new.x2, old.x2) - max(new.x1, old.x1)) *
+                                max(0, min(new.y2, old.y2) - max(new.y1, old.y1)) > .4 * min(new.w * new.h, old.w * old.h)]
+                    if any(old.conf >= .85 or old.conf >= new.conf for old in overlaps):
+                        continue
+                    for old in overlaps:
+                        boxes.remove(old)
+                    boxes.append(new)
+                    self.last_english_recovered_count += 1
+            except Exception as exc:
+                print(f'[ocr] İngilizce balon yeniden okuması atlandı: {exc}')
 
     def _retry_paddle_regions(self, rgb: np.ndarray, boxes: list[Box],
                               weak_boxes: list[Box]) -> None:

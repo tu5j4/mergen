@@ -9,14 +9,14 @@ from PySide6.QtCore import QObject, QRect, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication, QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout, QDialog, QMessageBox, QProgressBar, QSlider, QSpinBox,
-    QVBoxLayout, QWidget, QScrollArea,
+    QVBoxLayout, QWidget, QScrollArea, QSizePolicy,
 )
 from .menu_widgets import (MenuCheckBox as QCheckBox, MenuComboBox as QComboBox,
                           MenuFormLayout as QFormLayout, MenuGroupBox as QGroupBox,
                           MenuLabel as QLabel, MenuButton as QPushButton, menu_text)
 from .usage_monitor import UsageMonitor
 
-from ..config import APP_ICON, LANGS, PRESET_NAMES, TRANSLATION_MODELS, Settings
+from ..config import APP_ICON, PROJECT_ROOT, LANGS, PRESET_NAMES, TRANSLATION_MODELS, Settings
 from ..core.pipeline import TranslationWorker
 from ..platform_utils import exclude_from_capture, logical_to_capture_rect
 from .overlay import OverlayWindow
@@ -63,7 +63,8 @@ class ControlPanel(QWidget):
         self.setWindowTitle("mergen")
         self.setWindowIcon(QIcon(str(APP_ICON)))
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        self.setMinimumWidth(330)
+        self.setMinimumWidth(370)
+        self.setObjectName("controlPanel")
         self.setMaximumWidth(420)
 
         self.worker: TranslationWorker | None = None
@@ -101,10 +102,12 @@ class ControlPanel(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 14, 14, 10)
-        root.setSpacing(10)
+        root.setSpacing(14)
 
-        g_src = QGroupBox("Çeviri alanı")
+        g_src = QGroupBox("çeviri")
         f_src = QFormLayout(g_src)
+        f_src.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        f_src.setVerticalSpacing(10)
         self.cb_lang = QComboBox()
         for code, info in LANGS.items():
             self.cb_lang.addItem(info["name"], code)
@@ -116,6 +119,7 @@ class ControlPanel(QWidget):
         f_src.addRow("OCR motoru", self.cb_ocr)
         self._refresh_ocr_menu()
 
+        root.addWidget(g_src)
         row = QHBoxLayout()
         self.btn_region = QPushButton("Bölge seç")
         self.btn_region.clicked.connect(lambda: self.select_region(False))
@@ -123,10 +127,9 @@ class ControlPanel(QWidget):
         self.btn_full.clicked.connect(self._select_fullscreen)
         row.addWidget(self.btn_region)
         row.addWidget(self.btn_full)
-        f_src.addRow("Alan:", row)
-        self.lbl_region = QLabel("Henüz seçilmedi")
-        f_src.addRow("", self.lbl_region)
-        root.addWidget(g_src)
+        root.addLayout(row)
+        self.lbl_region = QLabel("Henüz seçilmedi", self)
+        self.lbl_region.hide()  # Region details remain available to existing code, without a visible card.
 
         self.btn_run = QPushButton("▶  Başlat")
         self.btn_run.setObjectName('run')
@@ -136,24 +139,32 @@ class ControlPanel(QWidget):
         self.btn_run.setFont(f)
         self.btn_run.clicked.connect(self.toggle_run)
         self.btn_now = QPushButton("Şimdi çevir")
-        self.btn_now.setMinimumHeight(36)
+        self.btn_now.setFixedHeight(36)
         self.btn_now.clicked.connect(self.translate_now)
-        root.addWidget(self.btn_run)
 
         action_row = QHBoxLayout()
         self.btn_overlay = QPushButton("çeviriyi gizle" if self.s.overlay_visible else "çeviriyi göster")
-        self.btn_overlay.setMinimumHeight(36)
+        self.btn_overlay.setFixedHeight(36)
         self.btn_overlay.clicked.connect(self.toggle_overlay_visible)
-        self.btn_settings = QPushButton("⚙")
+        self.btn_settings = QPushButton("")
         self.btn_settings.setObjectName('settings')
-        self.btn_settings.setFixedSize(38, 36)
+        self.btn_settings.setIcon(QIcon(str(PROJECT_ROOT / 'assets' / 'ui' / 'settings.svg')))
+        self.btn_settings.setFixedHeight(36)
         self.btn_settings.setToolTip('ayarlar')
         self.btn_settings.setAccessibleName('ayarlar')
         self.btn_settings.clicked.connect(self._show_settings)
         action_row.addWidget(self.btn_now, 1)
         action_row.addWidget(self.btn_overlay, 1)
-        action_row.addWidget(self.btn_settings)
-        root.addLayout(action_row)
+        action_row.addWidget(self.btn_settings, 1)
+        dock = QWidget()
+        dock.setObjectName("toolDock")
+        dock.setLayout(action_row)
+        action_row.setContentsMargins(0, 0, 0, 0)
+        action_row.setSpacing(8)
+        for button in (self.btn_now, self.btn_overlay, self.btn_settings):
+            button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        root.addWidget(dock)
+        root.addWidget(self.btn_run)
 
         self.lbl_status = QLabel("Hazır")
         self.lbl_status.setWordWrap(True)
@@ -162,21 +173,39 @@ class ControlPanel(QWidget):
         root.addStretch(1)
 
         self.usage_group = QGroupBox("sistem kullanımı")
+        self.usage_group.setObjectName("usageGroup")
         usage_l = QVBoxLayout(self.usage_group)
+        usage_l.setSpacing(14)
         self.usage_rows = {}
+        self.usage_values = {}
         for key, label in (('gpu', 'gpu'), ('vram', 'vram'), ('cpu', 'cpu')):
             container = QWidget()
-            row = QHBoxLayout(container)
+            container.setObjectName("usageRow")
+            stack = QVBoxLayout(container)
+            stack.setContentsMargins(0, 0, 0, 0)
+            stack.setSpacing(5)
+            row = QHBoxLayout()
             row.setContentsMargins(0, 0, 0, 0)
             name = QLabel(label)
-            name.setFixedWidth(40)
+            name.setFixedWidth(36)
+            name.setObjectName("usageName")
             row.addWidget(name)
             bar = QProgressBar()
             bar.setRange(0, 100)
             bar.setValue(0)
-            bar.setFormat('bekleniyor')
+            bar.setTextVisible(False)
+            bar.setFixedHeight(5)
+            value_label = QLabel('bekleniyor')
+            value_label.setObjectName('usageValue')
+            value_label.setFixedWidth(92)
+            value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.usage_values[key] = value_label
             bar.setToolTip('tüm sistem kullanımı' if key != 'vram' else 'kullanılan ekran kartı belleği / toplam bellek')
-            row.addWidget(bar, 1)
+            row.addStretch(1)
+            row.addWidget(value_label)
+            stack.addLayout(row)
+            stack.addWidget(bar)
+            container.setMinimumHeight(28)
             setattr(self, key + '_bar', bar)
             self.usage_rows[key] = container
             usage_l.addWidget(container)
@@ -184,21 +213,33 @@ class ControlPanel(QWidget):
 
         self.settings_dialog = QDialog(self)
         self.settings_dialog.setWindowTitle("mergen · ayarlar")
-        self.settings_dialog.setMinimumWidth(440)
+        self.settings_dialog.setMinimumWidth(370)
         dialog_root = QVBoxLayout(self.settings_dialog)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         settings_content = QWidget()
         settings_root = QVBoxLayout(settings_content)
+        settings_root.setContentsMargins(2, 2, 2, 2)
+        settings_root.setSpacing(8)
         scroll.setWidget(settings_content)
         dialog_root.addWidget(scroll)
-        self.settings_dialog.resize(490, min(800, QGuiApplication.primaryScreen().availableGeometry().height() - 80))
+        self.settings_dialog.resize(410, min(620, QGuiApplication.primaryScreen().availableGeometry().height() - 80))
         g_view = QGroupBox("Görünüm")
         f_view = QFormLayout(g_view)
+        f_view.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        f_view.setVerticalSpacing(6)
         self.chk_visible = QCheckBox("Çeviriyi göster")
         self.chk_visible.setChecked(self.s.overlay_visible)
         self.chk_visible.toggled.connect(self._on_visible_changed)
+
+        self.cb_panel_theme = QComboBox()
+        for code, name in (("green", "Yeşil"), ("white", "Beyaz"),
+                           ("navy", "Lacivert"), ("black", "Siyah"), ("sepia", "Sepya")):
+            self.cb_panel_theme.addItem(name, code)
+        self.cb_panel_theme.setCurrentIndex(max(0, self.cb_panel_theme.findData(self.s.panel_theme)))
+        self.cb_panel_theme.currentIndexChanged.connect(self._on_panel_theme_changed)
+        f_view.addRow("Panel teması:", self.cb_panel_theme)
 
         self.cb_theme = QComboBox()
         for code, name in (("white", "Beyaz"), ("black", "Siyah"), ("sepia", "Sepya"),
@@ -206,7 +247,7 @@ class ControlPanel(QWidget):
             self.cb_theme.addItem(name, code)
         self.cb_theme.setCurrentIndex(max(0, self.cb_theme.findData(self.s.theme)))
         self.cb_theme.currentIndexChanged.connect(self._on_theme_changed)
-        f_view.addRow("Tema:", self.cb_theme)
+        f_view.addRow("Çeviri kutusu teması:", self.cb_theme)
 
         self.sl_opacity = QSlider(Qt.Orientation.Horizontal)
         self.sl_opacity.setRange(30, 100)
@@ -236,6 +277,8 @@ class ControlPanel(QWidget):
 
         g_perf = QGroupBox("Performans")
         f_perf = QFormLayout(g_perf)
+        f_perf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+        f_perf.setVerticalSpacing(6)
         self.cb_preset = QComboBox()
         for key, name in PRESET_NAMES.items():
             self.cb_preset.addItem(name, key)
@@ -365,31 +408,69 @@ class ControlPanel(QWidget):
             self.worker.reset_translation_context(enabled)
 
     def _apply_theme(self) -> None:
+        # Glass-inspired gradients are rendered by Qt on all supported Windows versions.
+        # Panel styling is independent of the text overlay's theme and opacity.
         palettes = {
-            "white": ("#f7f8fa", "#20242a", "#ffffff", "#cbd2dc", "#edf1f5", "#256fa8", "#52606d"),
-            "black": ("#0d0d0e", "#eeeeee", "#19191b", "#3b3b3f", "#252528", "#7fc7ff", "#b7b7bb"),
-            "sepia": ("#f3ead9", "#4a3826", "#fff8e9", "#c7b08a", "#eadbc1", "#a56324", "#70583c"),
-            "navy": ("#141821", "#e9edf5", "#222a38", "#30394b", "#252d3a", "#4da3dc", "#afbdd0"),
-            "gray": ("#e2e4e7", "#282c31", "#f4f5f6", "#aeb4bb", "#d2d6da", "#58718a", "#59636e"),
+            # background, text, surface, border, primary, muted, primary text, complementary control
+            "green": ("#242722", "#f3f5ed", "#30352d", "#535c4b", "#d8ed9b", "#bcc5b2", "#25321a", "#dcb2eb"),
+            "white": ("#f0f2ec", "#293024", "#e4e8de", "#b9c2b0", "#cee799", "#5c6653", "#25321a", "#674484"),
+            "navy": ("#171e2c", "#edf2fc", "#232e41", "#475770", "#a9caff", "#b5c2d8", "#152339", "#f0bc85"),
+            "black": ("#191a1c", "#f3f3f5", "#28292d", "#51525b", "#dedee5", "#bcbcc7", "#202127", "#ededf2"),
+            "sepia": ("#efe5d5", "#423323", "#e4d7c1", "#b7a58b", "#73532d", "#6e5d46", "#fff6e8", "#385d8a"),
         }
-        bg, fg, control, border, progress, accent, muted = palettes.get(self.s.theme, palettes["navy"])
+        bg, fg, surface, border, accent, muted, ink, contrast = palettes.get(self.s.panel_theme, palettes["green"])
+        light = self.s.panel_theme in ("white", "sepia")
+        shine = "rgba(255,255,255,150)" if light else "rgba(255,255,255,30)"
+        check = PROJECT_ROOT / "assets" / "ui" / ("check-light.svg" if light else "check-dark.svg")
+        rail = "rgba(0,0,0,22)" if light else "rgba(255,255,255,28)"
+        glass = f"qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {shine},stop:1 {surface})"
         self.setStyleSheet(f"""
-            QWidget {{ background: {bg}; color: {fg}; font-size: 12px; }}
-            QGroupBox {{ border: 1px solid {border}; border-radius: 8px; margin-top: 9px; padding: 8px; font-weight: 600; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
-            QPushButton, QComboBox, QSpinBox {{ background: {control}; border: 1px solid {border}; border-radius: 6px; padding: 7px; }}
-            QPushButton:hover {{ border-color: {accent}; }} QPushButton:pressed {{ background: {progress}; }}
-            QPushButton#run {{ border-color: {accent}; font-weight: 600; }}
-            QPushButton#settings {{ font-size: 22px; padding: 0; }}
-            QCheckBox {{ spacing: 8px; padding: 3px 0; }}
-            QProgressBar {{ border: 0; background: {progress}; border-radius: 4px; text-align: center; min-height: 10px; }}
-            QProgressBar::chunk {{ background: {accent}; border-radius: 4px; }}
+            QWidget {{ background: {bg}; color: {fg}; font-family: 'Segoe UI'; font-size: 12px; }}
+            QLabel {{ background: transparent; }}
+            QGroupBox {{ background: {surface}; border: 1px solid {border}; border-radius: 17px;
+                margin-top: 12px; padding: 14px 10px 10px; font-weight: 500; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 5px; color: {muted}; }}
+            QPushButton, QComboBox, QSpinBox {{ background: {glass}; border: 1px solid {border};
+                border-radius: 12px; padding: 10px; min-height: 18px; }}
+            QPushButton:hover, QComboBox:hover {{ border-color: {accent}; }}
+            QPushButton:pressed {{ background: {surface}; }}
+            QPushButton:focus, QComboBox:focus, QSpinBox:focus {{ border: 2px solid {accent}; }}
+            QPushButton:disabled {{ color: {muted}; }}
+            QComboBox::drop-down {{ border: 0; width: 20px; }}
+            QComboBox {{ padding-right: 22px; }}
+            QComboBox QAbstractItemView {{ background: {bg}; color: {fg}; selection-background-color: {accent}; selection-color: {ink}; }}
+            QWidget#toolDock {{ background: transparent; border: 0; }}
+            QWidget#toolDock QPushButton {{ background: {glass}; border: 1px solid {border}; border-radius: 17px; padding: 5px; min-height: 24px; }}
+            QWidget#toolDock QPushButton:hover {{ background: {surface}; }}
+            QPushButton#run {{ background: {accent}; color: {ink}; border: 0; border-radius: 15px; font-weight: 600; }}
+            QPushButton#run:hover {{ border: 2px solid {fg}; }}
+            QPushButton#settings {{ padding: 5px; }}
+            QCheckBox {{ spacing: 8px; padding: 5px 0; }}
+            QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {border}; border-radius: 5px; background: {bg}; }}
+            QCheckBox::indicator:checked {{ background: {contrast}; border: 1px solid {contrast}; image: url("{check.as_posix()}"); }}
+            QSlider::groove:horizontal {{ background: {border}; height: 5px; border-radius: 2px; }}
+            QSlider::sub-page:horizontal {{ background: {contrast}; border-radius: 2px; }}
+            QSlider::handle:horizontal {{ background: {contrast}; border: 2px solid {fg}; width: 14px; height: 14px; margin: -6px 0; border-radius: 8px; }}
+            QProgressBar {{ border: 0; background: {rail}; border-radius: 2px; min-height: 5px; max-height: 5px; }}
+            QProgressBar::chunk {{ background: {contrast}; border-radius: 2px; }}
+            QWidget#toolDock QPushButton:focus {{ border: 2px solid {contrast}; }}
+            QWidget#usageRow {{ background: transparent; border: 0; }}
+            QLabel#usageName {{ color: {muted}; background: transparent; font-size: 11px; }}
+            QLabel#usageValue {{ color: {fg}; background: transparent; font-size: 12px; font-weight: 600; }}
+            QDialog QGroupBox {{ padding: 8px 8px 6px; border-radius: 14px; }}
+            QDialog QPushButton, QDialog QComboBox, QDialog QSpinBox {{ padding: 5px 8px; border-radius: 9px; min-height: 17px; }}
+            QDialog QCheckBox {{ padding: 2px 0; }}
             QLabel#status {{ color: {muted}; padding: 4px; }}
+            QScrollArea {{ border: 0; }}
         """)
+
+    def _on_panel_theme_changed(self, _idx: int) -> None:
+        self.s.panel_theme = self.cb_panel_theme.currentData()
+        self._apply_theme()
 
     def _on_theme_changed(self, _idx: int) -> None:
         self.s.theme = self.cb_theme.currentData()
-        self._apply_theme()
+        self.overlay.refresh_style()
 
     def _on_model_changed(self, _idx: int) -> None:
         folder = self.cb_model.currentData()
@@ -421,7 +502,10 @@ class ControlPanel(QWidget):
         for key, value in values.items():
             bar = getattr(self, key + '_bar')
             bar.setValue(value if value is not None else 0)
-            bar.setFormat('%p%' if value is not None else 'kullanılamıyor')
+            self.usage_values[key].setText(f'{value}%' if value is not None else 'kullanılamıyor')
+            source = self.usage_monitor.source if key in ('gpu', 'vram') else 'tüm sistem'
+            detail = 'en yoğun gpu motoru' if key == 'gpu' and source.startswith('windows') else key
+            bar.setToolTip(f'{detail}: {value}% · {source}' if value is not None else f'{key}: ölçüm kullanılamıyor')
 
     # ------------------------------------------------------------------ worker
     def _ensure_worker(self) -> None:
