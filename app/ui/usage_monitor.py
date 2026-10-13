@@ -34,6 +34,9 @@ class UsageMonitor(QObject):
         super().__init__(parent)
         self.enabled = {'gpu': False, 'vram': False, 'cpu': False}
         self.command = shutil.which('nvidia-smi')
+        self.native = None
+        self.native_attempted = False
+        self.source = 'nvidia-smi'
         try:
             import psutil
             self.cpu_percent = psutil.cpu_percent
@@ -69,8 +72,10 @@ class UsageMonitor(QObject):
             self.readings.emit({'cpu': round(value) if value is not None else None})
         if not (self.enabled['gpu'] or self.enabled['vram']):
             return
-        if not self.command:
-            self.readings.emit({'gpu': None, 'vram': None})
+        if self.native is not None:
+            self.readings.emit(self.native.sample())
+        elif not self.command:
+            self._fallback()
         elif self.process.state() == QProcess.ProcessState.NotRunning:
             self.process.start(self.command, [
                 '--id=0', '--query-gpu=utilization.gpu,memory.used,memory.total',
@@ -82,14 +87,32 @@ class UsageMonitor(QObject):
         output = bytes(self.process.readAllStandardOutput()).decode('utf-8', errors='replace')
         self.process.readAllStandardError()
         if self.enabled['gpu'] or self.enabled['vram']:
-            self.readings.emit(parse_gpu_usage(output) if code == 0 else {'gpu': None, 'vram': None})
+            values = parse_gpu_usage(output) if code == 0 else {'gpu': None, 'vram': None}
+            if all(values[key] is not None for key in ('gpu', 'vram')):
+                self.readings.emit(values)
+            else:
+                self._fallback()
 
     def _failed(self, _error):
         self.timeout.stop()
         if self.enabled['gpu'] or self.enabled['vram']:
-            self.readings.emit({'gpu': None, 'vram': None})
+            self._fallback()
+
+    def _fallback(self):
+        if not self.native_attempted:
+            self.native_attempted = True
+            try:
+                from .windows_gpu_usage import WindowsGPUUsage
+                self.native = WindowsGPUUsage()
+                self.source = 'windows · ' + self.native.name
+            except OSError:
+                self.native = None
+        self.readings.emit(self.native.sample() if self.native else {'gpu': None, 'vram': None})
 
     def close(self):
         self.set_enabled(False, False, False)
         if self.process.state() != QProcess.ProcessState.NotRunning:
             self.process.waitForFinished(1000)
+        if self.native is not None:
+            self.native.close()
+            self.native = None

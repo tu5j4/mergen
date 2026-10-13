@@ -41,6 +41,10 @@ class MenuComboBox(QtWidgets.QComboBox):
         self.setSizeAdjustPolicy(self.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.setMinimumContentsLength(14)
 
+    def wheelEvent(self, event):
+        # Let the settings scroll area consume wheel events; never change selection.
+        event.ignore()
+
     def addItem(self, text, userData=None):
         super().addItem(menu_text(text), userData)
 
