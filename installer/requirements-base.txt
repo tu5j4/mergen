@@ -1,0 +1,13 @@
+# Tested direct dependencies. Torch CPU is installed from its official index first.
+PySide6==6.12.0
+mss==10.2.0
+numpy==2.3.5
+opencv-contrib-python==4.10.0.84
+Pillow==12.3.0
+ctranslate2==4.8.2
+transformers==5.19.0
+sentencepiece==0.2.2
+psutil==7.2.2
+pynput==1.8.2
+paddleocr==3.7.0
+paddlex==3.7.2

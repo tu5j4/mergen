@@ -1,0 +1,26 @@
+{
+  "grandfather": {
+    "sources": {"eng_Latn": "\\b(?:grandfather|grandpa|granddad)\\w*\\b", "zho_Hant": "爺爺|祖父|外公", "zho_Hans": "爷爷|祖父|外公", "jpn_Jpan": "祖父|おじい(?:さん|ちゃん)|じいちゃん", "kor_Hang": "할아버지|조부"},
+    "turkish": "\\b(?:dede|büyükbaba)\\w*"
+  },
+  "grandmother": {
+    "sources": {"eng_Latn": "\\b(?:grandmother|grandma|granny)\\w*\\b", "zho_Hant": "奶奶|祖母|外婆", "zho_Hans": "奶奶|祖母|外婆", "jpn_Jpan": "祖母|おばあ(?:さん|ちゃん)|ばあちゃん", "kor_Hang": "할머니|조모"},
+    "turkish": "\\b(?:nine|anneanne|babaanne|büyükanne)\\w*"
+  },
+  "mother": {
+    "sources": {"eng_Latn": "\\b(?:mother|mom|mum|mama)\\w*\\b", "zho_Hant": "媽媽|母親", "zho_Hans": "妈妈|母亲", "jpn_Jpan": "お母さん|母親|ママ", "kor_Hang": "어머니|엄마"},
+    "turkish": "\\b(?:anne|ana)\\w*"
+  },
+  "father": {
+    "sources": {"eng_Latn": "\\b(?:father|dad|daddy|papa)\\w*\\b", "zho_Hant": "爸爸|父親", "zho_Hans": "爸爸|父亲", "jpn_Jpan": "お父さん|父親|パパ", "kor_Hang": "아버지|아빠"},
+    "turkish": "\\b(?:baba|peder)\\w*"
+  },
+  "nurse": {
+    "sources": {"eng_Latn": "\\bnurses?\\b", "zho_Hant": "護士", "zho_Hans": "护士", "jpn_Jpan": "看護師|看護婦", "kor_Hang": "간호사"},
+    "turkish": "\\bhemşire\\w*"
+  },
+  "doctor": {
+    "sources": {"eng_Latn": "\\b(?:doctors?|physicians?)\\b", "zho_Hant": "醫生|醫師", "zho_Hans": "医生|医师", "jpn_Jpan": "医者|医師", "kor_Hang": "의사"},
+    "turkish": "\\b(?:doktor|hekim|tabip)\\w*"
+  }
+}

@@ -1,0 +1,13 @@
+mergen
+
+1. ilk kez kullanacaksan kurulum.bat dosyasini ac.
+2. kurulum tamamlaninca baslat.bat ile uygulamayi ac.
+3. daha sonra model kurmak/kaldirmak icin bagliliklar.bat dosyasini ac.
+
+ilk kurulum internet gerektirir. secimlerin onaylanmadan model kurulmaz.
+uygulama windows uzerinde dogrudan calisir; docker veya sandbox gerekmez.
+paylasmak icin kurulmamis kolay-kurulum klasorunun tamamini zip yapin.
+program klasoru uygulamanin ic dosyalaridir; tasirken tum klasoru birlikte tasi.
+bu paket windows x64 ve python 3.11 icindir; python yoksa kurulum yardim eder.
+nvidia desteklenirse gpu, amd/intel icin cpu kullanilir.
+kod ve model lisanslari program/LICENSE ve program/THIRD_PARTY_NOTICES.md icindedir.
