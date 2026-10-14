@@ -106,7 +106,13 @@ class OCREngine:
         self.paddle_device: str | None = None
         self.paddle_model_kind: str | None = None
         self.manga_warning = ''
-        want_paddle = lang in LANGS
+        if settings.ocr_backend != 'local':
+            from .runtime_client import RuntimeClient
+            self.paddle = RuntimeClient('ocr', settings.ocr_backend, language=lang, canvas=settings.ocr_canvas_size)
+            self.paddle_device = self.paddle.device
+            self.paddle_model_kind = 'Mobil · izole'
+            self.gpu = settings.ocr_backend != 'cpu'
+        want_paddle = lang in LANGS and settings.ocr_backend == 'local'
         if want_paddle:
             try:
                 import paddle
@@ -160,9 +166,11 @@ class OCREngine:
             or (settings.use_manga_ocr and self.engine_preference == 'auto'))
         if want_manga:
             from .manga_client import MangaClient
+            from .runtime_client import RuntimeClient
             device = 'cpu' if settings.use_gpu == 'no' else settings.manga_device
             try:
-                self.manga = MangaClient(device)
+                self.manga = (RuntimeClient('manga', settings.manga_backend)
+                              if settings.manga_backend != 'local' else MangaClient(device))
             except Exception as exc:
                 self.manga_warning = str(exc)
                 if device == 'auto':
@@ -178,6 +186,8 @@ class OCREngine:
         if self.manga is not None:
             self.manga.close()
             self.manga = None
+        if hasattr(self.paddle, "close"):
+            self.paddle.close()
         self.paddle = None
 
     # ------------------------------------------------------------------

@@ -102,7 +102,7 @@ class MergenUITests(unittest.TestCase):
         self.assertLessEqual(max(b.width() for b in buttons) - min(b.width() for b in buttons), 1)
         self.assertEqual(buttons[1].x() - buttons[0].geometry().right(),
                          buttons[2].x() - buttons[1].geometry().right())
-        for key in ('vram', 'cpu'):
+        for key in ('gpu', 'vram', 'cpu'):
             p.usage_checks[key].setChecked(True)
         p._update_usage({'gpu': 12, 'vram': 73, 'cpu': 28})
         self.app.processEvents()
@@ -149,6 +149,7 @@ class MergenUITests(unittest.TestCase):
 
     def test_usage_toggles_restore_individual_choices_and_stop_sampling(self):
         p = self.panel
+        p.usage_checks['gpu'].setChecked(True)
         p.usage_checks['vram'].setChecked(True)
         p.usage_checks['cpu'].setChecked(True)
         self.app.processEvents()

@@ -17,7 +17,16 @@ from .session_context import SessionContext, TranslationPlan
 
 class Translator:
     def __init__(self, model_dir: Path, beam_size: int = 4, cache_size: int = 2000,
-                 device: str = 'auto') -> None:
+                 device: str = 'auto', backend: str = 'local') -> None:
+        if backend != 'local':
+            from .runtime_client import RuntimeClient
+            self._runtime = RuntimeClient('translate', backend, model=str(model_dir))
+            self.device = self._runtime.device
+            self.compute_type = 'float32' if backend in ('amd','intel') else 'auto'
+            self.beam_size, self.cache_size = beam_size, cache_size
+            self._cache = OrderedDict()
+            self.last_glossary_ms = self.last_retry_count = self.last_context_ms = 0
+            return
         import ctranslate2
         from transformers import AutoTokenizer
 
@@ -74,6 +83,10 @@ class Translator:
         self.last_context_ms = 0.0
 
     # ------------------------------------------------------------------
+    def close(self) -> None:
+        if getattr(self, "_runtime", None) is not None:
+            self._runtime.close()
+
     def clear_cache(self) -> None:
         self._cache.clear()
 
@@ -106,6 +119,8 @@ class Translator:
     # ------------------------------------------------------------------
     def _translate_texts(self, texts: list[str], src_code: str,
                          target_code: str, beam: int) -> list[str]:
+        if getattr(self, "_runtime", None) is not None:
+            return self._runtime.request(op="translate", texts=texts, source=src_code, target=target_code, beam=beam)
         self.tok.src_lang = src_code
         batch = [self.tok.convert_ids_to_tokens(
             self.tok.encode(t, truncation=True, max_length=400)) for t in texts]
