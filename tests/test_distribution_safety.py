@@ -10,7 +10,7 @@ from scripts.export_next_source import source_files
 class DistributionSafetyTests(unittest.TestCase):
     def test_bundle_keeps_workers_and_excludes_development_tools(self):
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
+            root=Path(directory).resolve()
             for relative in ('app/application.py','installer/apply-update.ps1',
                              *('scripts/'+name for name in WORKERS),
                              'scripts/fetch_build_tools.ps1','scripts/publish_local_copy.ps1',
@@ -24,7 +24,7 @@ class DistributionSafetyTests(unittest.TestCase):
 
     def test_private_key_cannot_enter_bundle(self):
         with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory);(root/'assets').mkdir()
+            root=Path(directory).resolve();(root/'assets').mkdir()
             (root/'assets/private.pem').write_text('test')
             with self.assertRaises(ValueError):list(bundle_sources(root))
 
