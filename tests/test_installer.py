@@ -15,7 +15,7 @@ class InstallerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.hardware = dict(cuda_candidate=True, supported_os=True,
                              supported_python=True, avx=True, vc_runtime=True,
                              free_gib=100)
