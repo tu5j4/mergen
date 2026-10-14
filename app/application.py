@@ -22,7 +22,7 @@ def main():
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('mergen.desktop')
     prepare_data()
-    from app.ui.next_controller import Controller
+    from app.ui.controller import Controller
     if smoke:
         from unittest.mock import patch
         with patch.object(Controller,'refresh'),patch('app.ui.control_panel.start_global_hotkeys',return_value=None):controller=Controller()

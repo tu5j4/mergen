@@ -22,19 +22,18 @@ args+=['--add-binary',str(openmp)+os.pathsep+'.']
 for name in ('torch','torchvision','paddle','paddleocr','paddlex','transformers','ctranslate2','huggingface_hub',
              'manga_ocr','scipy','pandas','matplotlib','IPython','notebook','pytest','tkinter'):
     args+=['--exclude-module',name]
-for folder in ('app','assets','installer','scripts'):
-    for path in (ROOT/folder).rglob('*'):
-        if path.is_file() and '__pycache__' not in path.parts and path.suffix in ('.py','.qml','.json','.png','.ico','.svg','.pem','.ps1'):
-            args+=['--add-data',str(path)+os.pathsep+str(path.parent.relative_to(ROOT))]
+from bundle_files import bundle_sources
+sources=list(bundle_sources(ROOT))
+for path in sources:
+    args+=['--add-data',str(path)+os.pathsep+str(path.parent.relative_to(ROOT))]
 # Python 3.12 workers must never import bundled Python 3.11 extension modules.
 # Ship pure project sources under their own import root, separate from UI libraries.
-for folder in ('app','installer','scripts'):
-    for path in (ROOT/folder).rglob('*'):
-        if path.is_file() and '__pycache__' not in path.parts and path.suffix in ('.py','.json') and path.name not in ('install_test_cpu.py','verify_local_models.py','diagnose_bundle.py'):
-            args+=['--add-data',str(path)+os.pathsep+str(Path('runtime-source')/path.parent.relative_to(ROOT))]
+for path in sources:
+    if path.relative_to(ROOT).parts[0] in ('app','installer','scripts') and path.suffix in ('.py','.json'):
+        args+=['--add-data',str(path)+os.pathsep+str(Path('runtime-source')/path.parent.relative_to(ROOT))]
 for name in ('LICENSE','THIRD_PARTY_NOTICES.md'):
     args+=['--add-data',str(ROOT/name)+os.pathsep+'.']
-args+=[str(ROOT/'next_main.py')]
+args+=[str(ROOT/'main.py')]
 PyInstaller.__main__.run(args)
 
 

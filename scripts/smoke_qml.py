@@ -13,10 +13,10 @@ from PySide6.QtCore import QUrl,QMetaObject,Qt,QObject,QPointF
 from unittest.mock import patch
 from app.config import Settings
 from app.storage import APP_ROOT
-from app.ui.next_controller import Controller
+from app.ui.controller import Controller
 app=QApplication([])
 QFontDatabase.addApplicationFont('C:/Windows/Fonts/segoeui.ttf')
-with patch('app.ui.control_panel.start_global_hotkeys',return_value=None),patch.object(Controller,'refresh'),patch('app.ui.next_controller.Settings.load',return_value=Settings(check_updates=False)),patch('app.ui.next_controller.Settings.save'):
+with patch('app.ui.control_panel.start_global_hotkeys',return_value=None),patch.object(Controller,'refresh'),patch('app.ui.controller.Settings.load',return_value=Settings(check_updates=False)),patch('app.ui.controller.Settings.save'):
     controller=Controller()
     controller._state['components']=[dict(key=k,ready=False,present=False,title=v['title'],detail=v['detail']) for k,v in __import__('installer.catalog',fromlist=['COMPONENTS']).COMPONENTS.items()]
     engine=QQmlApplicationEngine();engine.warnings.connect(lambda warnings:print('\n'.join(w.toString() for w in warnings),flush=True));engine.rootContext().setContextProperty('controller',controller)
