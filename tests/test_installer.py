@@ -180,26 +180,22 @@ class InstallerTests(unittest.TestCase):
         files = [p.relative_to(output).as_posix() for p in output.rglob('*') if p.is_file()]
         for forbidden in ['.venv/', '.manga-venv/', '.cache/', 'models/', 'settings.json', '__pycache__', '.env']:
             self.assertFalse(any(forbidden in name for name in files), forbidden)
-        self.assertTrue((output / 'github/LICENSE').exists())
-        self.assertEqual((output / 'github/app/data/session_terms.json').read_bytes(),
+        self.assertTrue((output / 'LICENSE').exists())
+        self.assertEqual((output / 'app/data/session_terms.json').read_bytes(),
                          (ROOT / 'app/data/session_terms.json').read_bytes())
-        self.assertEqual((output / 'kolay-kurulum/program/app/data/session_terms.json').read_bytes(),
-                         (ROOT / 'app/data/session_terms.json').read_bytes())
-        self.assertTrue((output / 'kolay-kurulum/program/app/core/session_context.py').exists())
-        self.assertEqual((output / 'kolay-kurulum/program/assets/mergen-logo.png').read_bytes(), (ROOT / 'assets/mergen-logo.png').read_bytes())
-        self.assertEqual((output / 'kolay-kurulum/program/assets/mergen.ico').read_bytes(),
+        self.assertTrue((output / 'app/core/session_context.py').exists())
+        self.assertTrue((output / 'app/ui/qml/Main.qml').exists())
+        self.assertTrue((output / 'scripts/runtime_worker.py').exists())
+        self.assertTrue((output / 'installer/constraints.txt').exists())
+        self.assertTrue((output / 'requirements-dev.txt').exists())
+        self.assertTrue((output / '.github/workflows/checks.yml').exists())
+        self.assertEqual((output / 'assets/mergen.ico').read_bytes(),
                          (ROOT / 'assets/mergen.ico').read_bytes())
-        self.assertEqual((output / 'github/assets/mergen.ico').read_bytes(),
-                         (ROOT / 'assets/mergen.ico').read_bytes())
-        self.assertTrue((output / 'kolay-kurulum/program/app/launch_gui.py').exists())
-        launch = (output / 'kolay-kurulum/baslat.bat').read_text()
+        launch = (output / 'baslat.bat').read_text()
         self.assertIn('pythonw.exe', launch)
-        self.assertIn('-m app.launch_gui', launch)
-        self.assertIn('%~dp0program\\.venv', launch)
-        self.assertEqual({p.name for p in (output / 'kolay-kurulum').iterdir()},
-                         {'program', 'kurulum.bat', 'baslat.bat', 'bagliliklar.bat', 'beni-oku.txt'})
-        self.assertFalse((output / 'kolay-kurulum/program/tests').exists())
-        self.assertIn('%~dp0program\\installer', (output / 'kolay-kurulum/kurulum.bat').read_text())
+        self.assertIn('main.py', launch)
+        self.assertFalse((output / 'kolay-kurulum').exists())
+        self.assertIn('mergen-setup-0.2.0.exe', (output / 'kurulum.bat').read_text())
         with self.assertRaises(FileExistsError):
             build(output)
 

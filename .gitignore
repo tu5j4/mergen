@@ -12,3 +12,9 @@ release/
 settings.json
 logs/
 qml-preview*.png
+preview-*.png
+.smoke-data/
+.installer-downloads/
+.cache/
+models/
+artifacts/

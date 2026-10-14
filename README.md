@@ -10,15 +10,14 @@ japonca, korece, çince ve ingilizce desteklenir. gerekli modeller indirildikten
 
 ## kurulum
 
-1. [kurulum paketini indir](https://github.com/tu5j4/mergen/raw/refs/heads/main/mergen-kolay-kurulum.zip) ve zip dosyasını bir klasöre çıkar.
-2. `kolay-kurulum` klasöründeki `kurulum.bat` dosyasını aç. kurmak istediğin bileşenleri seçip onayla.
-3. kurulum tamamlandıktan sonra aynı klasördeki `baslat.bat` dosyasını aç.
+1. [mergen 0.2.0 kurulumunu indir](https://github.com/tu5j4/mergen/releases/download/v0.2.0/mergen-setup-0.2.0.exe) ve exe dosyasını aç.
+2. kurulumdan sonra uygulamadaki `bileşenler` bölümünden `önerilen bileşenleri kur` seçeneğine bas.
 
-windows 10/11 x64 ve avx destekli bir işlemci gerekir. ilk kurulum için internet bağlantısı ve birkaç gb boş alan gerekir. python 3.11 bilgisayarında yoksa kurulum sırasında yükleyebilirsin.
+windows 10/11 x64 ve avx destekli bir işlemci gerekir. ilk kurulum için internet ve birkaç gb boş alan gerekir. gerekli python çalışma zamanı kurulum paketinde bulunur.
 
 ## kullanım
 
-önce okuduğun içeriğin dilini seç. `bölge seç` düğmesiyle çevrilmesini istediğin alanı işaretle veya `tüm ekran` seçeneğini kullan. ardından `başlat` düğmesine bas.
+önce okuduğun içeriğin dilini seç. `bölge seç` düğmesiyle çevrilmesini istediğin alanı işaretle veya `tüm ekran` seçeneğini kullan. ardından `çeviriyi başlat` düğmesine bas.
 
 bir yazı çevrilmediyse `şimdi çevir` düğmesiyle tekrar deneyebilirsin. yazı görünümü, çeviri modeli ve diğer seçenekler çark simgesiyle açılan ayarlarda bulunur.
 
