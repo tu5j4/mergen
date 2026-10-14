@@ -26,8 +26,8 @@ Uygulama logosu proje sahibinin sağladığı `assets/mergen-logo.png` dosyasıd
 MIT metni uygulama kodu içindir; logo ve üçüncü taraf markaları için ayrıca
 marka hakkı veya üçüncü taraf adına izin verilmez.
 
-Kurulu Python paketlerinin kendi LICENSE/NOTICE dosyaları `.venv/Lib/site-packages`
-altında bulunur. İkili paket/model içeren yeni dağıtımlar hazırlarken bu dosyaları
+Kurulu model paketlerinin LICENSE/NOTICE dosyaları veri klasöründeki
+`envs/<ortam>/Lib/site-packages` altında bulunur. İkili paket/model içeren yeni dağıtımlar hazırlarken bu dosyaları
 ve ilgili yeniden dağıtım koşullarını ayrıca koruyun.
 
 microsoft visual c++ çalışma zamanı ve openmp kitaplığı (vcomp140.dll), microsoft'un yeniden dağıtılabilir çalışma zamanı bileşenleridir; kendi lisans koşullarına tabidir. uygulama bu dosyaları kendi klasöründe kullanır. kaynak: https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files

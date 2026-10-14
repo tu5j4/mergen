@@ -1,10 +1,10 @@
-# 0.2.1 doğrulama kaydı
+# 0.2.0 doğrulama kaydı
 
-- 127 otomatik test geçti.
-- iş parçacığı tamamlanması, reddedilen kurulum, kullanım göstergeleri ve başarısız doğrulamanın yanlışlıkla başarı sayılmaması kontrol edildi.
-- beş tema, dört sekme ve beş açılır menü görünümü qml üzerinde kontrol edildi. bütün kullanım göstergeleri kapalıyken kartın kaybolduğu ve pencerenin küçülebildiği doğrulandı.
-- paketlenmiş 0.2.1 exe üzerinden python 3.12 alt süreçleriyle üç gerçek cpu model testi geçti: nllb japoncadan türkçeye çevirdi, paddleocr "hello world" metnini okudu, manga-ocr "こんにちは" sonucunu verdi.
-- arayüz sürecinde torch, paddle, transformers veya ctranslate2 yüklenmedi.
-- model süreçlerinin kaynak klasörü arayüzün python 3.11 uzantılarından ayrıldı. paketlenmiş exe testinde önce görülen python311.dll sürüm çakışması giderildi.
-- kurulum paketi inno setup ile derlenir. amd/intel donanım testi ve canlı github sürüm yükseltmesi bu değişiklikte yapılmadı.
-- yeni kurulum paketi kullanıcının kontrol etmesi için windows sandbox içinde açılır; model kütüphaneleri ve ağırlıkları uygulamanın bileşenler ekranından indirilir.
+- yayımlanan paket için 130 otomatik test geçti; beş tema, açılır menüler ve minimum pencere boyutu kontrol edildi.
+- paketlenmiş exe ile nllb cpu çevirisi, paddleocr ve manga-ocr gerçek model testleri geçti.
+- arayüz sürecine torch, paddle, transformers veya ctranslate2 yüklenmedi.
+- python 3.12 çalışanları, arayüzün python 3.11 uzantılarından ayrıdır. microsoft openmp bağımlılığı kurulum paketine eklenmiştir.
+- sistem göstergeleri varsayılan olarak kapalıdır; başlat düğmesi minimum pencere boyutunda görünür kalır.
+- amd/intel donanım testi ve canlı sürüm yükseltmesi ayrıca doğrulama gerektirir.
+
+depo düzenlemesinde eski kolay kurulum dağıtımı kaldırılmıştır. uygulamanın çalışan kaynakları `v0.2.0` etiketiyle karşılaştırılır; readme, geliştirme bağımlılıkları ve kaynak dışa aktarma araçları exe dağıtımına göre güncellenir.

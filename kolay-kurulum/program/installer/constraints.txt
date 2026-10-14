@@ -1,8 +1,0 @@
-numpy==2.3.5
-torch==2.11.0
-torchvision==0.26.0
-transformers==5.19.0
-paddleocr==3.7.0
-paddlex==3.7.2
-opencv-contrib-python==4.10.0.84
-manga-ocr==0.1.16
