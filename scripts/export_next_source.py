@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parent.parent
 TREES={'app':{'.py','.qml','.json'},'assets':{'.png','.ico','.svg','.pem'},
        'installer':{'.py','.iss','.ps1','.txt'},'scripts':{'.py','.ps1'},
        'tests':{'.py'},'docs':{'.md'},'.github':{'.yml','.yaml'}}
-FILES=('main.py','next_main.py','baslat.bat','baslat-yeni.bat','kurulum.bat',
+FILES=('main.py','baslat.bat','kurulum.bat',
        'bagliliklar.bat','requirements.txt','requirements-dev.txt','README.md',
        'LICENSE','THIRD_PARTY_NOTICES.md','.gitignore','.gitattributes')
 def source_files(source=ROOT):

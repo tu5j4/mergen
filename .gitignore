@@ -18,3 +18,9 @@ preview-*.png
 .cache/
 models/
 artifacts/
+*.log
+.env
+.env.*
+*.pfx
+*.p12
+*.dmp
