@@ -43,13 +43,15 @@ def detect():
     windows = sys.platform == 'win32'
     report = {'os': platform.system(), 'machine': platform.machine(),
               'python': platform.python_version(), 'bits': struct.calcsize('P') * 8,
-              'adapters': [], 'nvidia': [], 'avx': None, 'vc_runtime': False}
+              'windows_build':sys.getwindowsversion().build if windows else 0, 'adapters': [], 'processors': [], 'nvidia': [], 'avx': None, 'vc_runtime': False}
     if windows:
         raw = capture(['powershell.exe', '-NoProfile', '-Command',
             "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
-            "@(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) | ConvertTo-Json -Compress"])
+            "@{adapters=@(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name);processors=@(Get-CimInstance Win32_Processor | Select-Object -ExpandProperty Name)} | ConvertTo-Json -Compress"])
         try:
             names = json.loads(raw)
+            if isinstance(names,dict):
+                report['processors']=names.get('processors',[]);names=names.get('adapters',[])
             names = [names] if isinstance(names, str) else names or []
             report['adapters'] = [{'name': n, 'vendor': vendor(n)} for n in names]
         except ValueError:

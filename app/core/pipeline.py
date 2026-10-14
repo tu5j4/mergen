@@ -236,7 +236,7 @@ class TranslationWorker(QObject):
         from .translator import Translator
         self.status.emit("Çeviri modeli yükleniyor…")
         self.translator = Translator(self.s.model_path, self.s.beam_size, self.s.cache_size,
-                                     device='cpu' if self.s.use_gpu == 'no' else 'auto')
+                                     device='cpu' if self.s.use_gpu == 'no' else 'auto', backend=self.s.translation_backend)
 
     def _load_ocr(self, lang: str) -> None:
         from .ocr import OCREngine
@@ -256,12 +256,12 @@ class TranslationWorker(QObject):
             paddle_device = self.ocr.paddle_device or "cpu"
             paddle_model = self.ocr.paddle_model_kind or "Bilinmeyen"
             manga += f" + PaddleOCR {paddle_model} ({paddle_device.upper()})"
-            ocr_on_gpu = paddle_device.startswith("gpu")
+            ocr_on_gpu = paddle_device.startswith(("gpu", "cuda", "xpu"))
         else:
             ocr_on_gpu = self.ocr.gpu
         self.devices.emit(
             f"OCR: {'GPU ✅' if ocr_on_gpu else 'CPU ⚠️'}{manga}   |   "
-            f"Çeviri: {'GPU ✅' if self.translator.device == 'cuda' else 'CPU ⚠️'}"
+            f"Çeviri: {'GPU ✅' if self.translator.device.startswith(('cuda','xpu')) else 'CPU ⚠️'}"
         )
         self.status.emit(f"Hazır: {LANGS[lang]['name']}")
         # Isınma: ilk çağrıdaki gecikmeyi kullanıcı hissetmesin
@@ -625,6 +625,8 @@ class TranslationWorker(QObject):
 
         if self._executor is not None:
             self._executor.shutdown(wait=True, cancel_futures=True)
+        if self.translator is not None:
+            self.translator.close()
         if self.ocr is not None:
             self.ocr.close()
         self._session_context.clear()

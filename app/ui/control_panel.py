@@ -57,7 +57,7 @@ def start_global_hotkeys(bridge: HotkeyBridge):
 
 
 class ControlPanel(QWidget):
-    def __init__(self) -> None:
+    def __init__(self, enable_hotkeys=True) -> None:
         super().__init__()
         self.s = Settings.load()
         self.setWindowTitle("mergen")
@@ -94,7 +94,7 @@ class ControlPanel(QWidget):
         self.bridge.select_region.connect(lambda: self.select_region(False))
         self.bridge.toggle_overlay.connect(self.toggle_overlay_visible)
         self.bridge.translate_now.connect(self.translate_now)
-        self.hotkeys = start_global_hotkeys(self.bridge)
+        self.hotkeys = start_global_hotkeys(self.bridge) if enable_hotkeys else None
 
         QTimer.singleShot(0, lambda: exclude_from_capture(self))
 

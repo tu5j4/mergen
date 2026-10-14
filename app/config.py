@@ -12,10 +12,11 @@ from .runtime_paths import configure_runtime
 
 configure_runtime()
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+from .storage import APP_ROOT, DATA_ROOT
+PROJECT_ROOT = APP_ROOT
 APP_ICON = PROJECT_ROOT / 'assets' / ('mergen.ico' if sys.platform == 'win32' else 'mergen-logo.png')
-SETTINGS_FILE = PROJECT_ROOT / "settings.json"
-MODELS_DIR = PROJECT_ROOT / "models"
+SETTINGS_FILE = DATA_ROOT / "settings.json"
+MODELS_DIR = DATA_ROOT / "models"
 SETTINGS_VERSION = 7
 
 TARGET_NLLB = "tur_Latn"  # Hedef dil: Türkçe
@@ -97,11 +98,16 @@ class Settings:
     box_padding: int = 4
     overlay_visible: bool = True
     theme: str = "navy"
-    panel_theme: str = "green"
+    panel_theme: str = "white"
+    translation_backend: str = "local"
+    ocr_backend: str = "local"
+    manga_backend: str = "local"
+    check_updates: bool = True
     show_system_usage: bool = True
-    show_gpu_usage: bool = True
+    show_gpu_usage: bool = False
     show_vram_usage: bool = False
     show_cpu_usage: bool = False
+    usage_preferences_set: bool = False
 
     last_region: list | None = None
 
@@ -141,6 +147,8 @@ class Settings:
                 s.ocr_engine = "auto"
             if old_version < 6:
                 s.paddle_mobile = True
+        if not s.usage_preferences_set:
+            s.show_gpu_usage = s.show_vram_usage = s.show_cpu_usage = False
         s.panel_theme = {"glass_dark": "green", "glass_light": "white"}.get(s.panel_theme, s.panel_theme)
         if s.panel_theme not in ("green", "white", "navy", "black", "sepia"):
             s.panel_theme = "green"
@@ -154,6 +162,7 @@ class Settings:
 
     def save(self) -> None:
         try:
+            SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
             SETTINGS_FILE.write_text(
                 json.dumps(asdict(self), ensure_ascii=False, indent=2), encoding="utf-8"
             )
