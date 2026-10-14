@@ -11,6 +11,7 @@ paket kaynaklarından indirilir; bu indirmeler için internet gerekir.
 | nllb 1.3b | [Meta model kartı](https://huggingface.co/facebook/nllb-200-distilled-1.3B), CC-BY-NC-4.0 |
 | manga-ocr ve modeli | [kod](https://github.com/kha-white/manga-ocr), [model](https://huggingface.co/kha-white/manga-ocr-base), Apache-2.0 |
 | paddleocr / paddlepaddle | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR), [Paddle](https://github.com/PaddlePaddle/Paddle), Apache-2.0 |
+| certifi / mozilla kök sertifikaları | [certifi](https://github.com/certifi/python-certifi), MPL-2.0 |
 | ctranslate2 | [OpenNMT](https://github.com/OpenNMT/CTranslate2), MIT |
 | pytorch | [PyTorch lisansı](https://github.com/pytorch/pytorch/blob/main/LICENSE), BSD tarzı ve üçüncü taraf bildirimleri |
 | pyside6 / qt | [Qt for Python lisansları](https://doc.qt.io/qtforpython-6/licenses.html), LGPLv3/GPLv3 veya ticari lisans koşulları |

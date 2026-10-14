@@ -4,6 +4,9 @@ import hashlib
 import json
 import os
 import re
+import ssl
+
+import certifi
 import subprocess
 import sys
 import urllib.error
@@ -29,9 +32,16 @@ def trusted_url(value):
     return value
 
 
+def tls_context():
+    """Use bundled roots as well as Windows roots on fresh installations."""
+    context=ssl.create_default_context()
+    context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
 def request_json(url):
     request=urllib.request.Request(url,headers={'User-Agent':'mergen/'+VERSION,'Accept':'application/vnd.github+json'})
-    with urllib.request.urlopen(request,timeout=20) as response:
+    with urllib.request.urlopen(request,timeout=20,context=tls_context()) as response:
         raw=response.read(MAX_MANIFEST+1)
     if len(raw)>MAX_MANIFEST: raise ValueError('Güncelleme bildirimi çok büyük')
     return json.loads(raw)
@@ -70,7 +80,7 @@ def download_update(payload,emit=print):
     digest=hashlib.sha256();received=0
     request=urllib.request.Request(payload['url'],headers={'User-Agent':'mergen/'+VERSION})
     try:
-        with urllib.request.urlopen(request,timeout=30) as response,temp.open('wb') as out:
+        with urllib.request.urlopen(request,timeout=30,context=tls_context()) as response,temp.open('wb') as out:
             while True:
                 block=response.read(1024*1024)
                 if not block:break

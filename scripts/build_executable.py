@@ -17,7 +17,8 @@ if not openmp.is_file():
     raise RuntimeError('Install the Microsoft Visual C++ x64 redistributable before building: vcomp140.dll is missing')
 args=['--noconfirm','--clean','--windowed','--onedir','--name','Mergen','--icon',str(ROOT/'assets/mergen.ico'),
       '--paths',str(ROOT),'--hidden-import','PySide6.QtQuick','--hidden-import','PySide6.QtQuickControls2',
-      '--hidden-import','cryptography.hazmat.primitives.asymmetric.ed25519']
+      '--hidden-import','cryptography.hazmat.primitives.asymmetric.ed25519',
+      '--collect-data','certifi']
 args+=['--add-binary',str(openmp)+os.pathsep+'.']
 for name in ('torch','torchvision','paddle','paddleocr','paddlex','transformers','ctranslate2','huggingface_hub',
              'manga_ocr','scipy','pandas','matplotlib','IPython','notebook','pytest','tkinter'):

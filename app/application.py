@@ -43,7 +43,16 @@ def main():
             (DATA_ROOT/'smoke-result.json').write_text(json.dumps({'qml':True,'version':controller.state['version'],
                 'model_frameworks_loaded':[n for n in ('torch','paddle','transformers','ctranslate2') if n in sys.modules]}))
             controller.monitor.close();app.quit()
-        if '--runtime-test' in sys.argv:
+        if '--update-test' in sys.argv:
+            def check_update():
+                import json
+                from app import updates
+                try:result=dict(ok=True,result=updates.check())
+                except Exception as exc:result=dict(ok=False,error=str(exc))
+                (DATA_ROOT/'update-test-result.json').write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
+                finish()
+            QTimer.singleShot(1000,check_update)
+        elif '--runtime-test' in sys.argv:
             from dataclasses import replace
             from installer import service
             settings=replace(controller.settings,translation_backend='cpu',ocr_backend='cpu',manga_backend='cpu',source_lang='ja',use_manga_ocr=True)
