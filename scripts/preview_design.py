@@ -14,7 +14,7 @@ if '--check' in sys.argv:
 os.environ['QT_QUICK_BACKEND'] = 'software'
 os.environ['QT_QUICK_CONTROLS_STYLE'] = 'Basic'
 
-from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl, QPointF
+from PySide6.QtCore import QObject, Property, Signal, Slot, QUrl, QPointF, Qt
 from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import QApplication
 from PySide6.QtQml import QQmlApplicationEngine
@@ -95,9 +95,18 @@ def main():
     for theme in ('white', 'black', 'green', 'navy', 'sepia'):
         controller.values['theme'] = theme
         controller.changed.emit()
+        QTest.qWait(80)
+        rail=window.findChild(QQuickItem,'navigationRail')
+        logo=window.findChild(QQuickItem,'railLogo')
+        assert rail.width()==72 and logo.width()==32
+        assert abs(logo.mapToScene(QPointF(logo.width()/2,0)).x()-rail.width()/2)<1
         for page in range(4):
-            controller.navigate.emit(page)
+            nav=visual_item(window.contentItem(),'nav_'+str(page))
+            point=nav.mapToScene(QPointF(nav.width()/2,nav.height()/2)).toPoint()
+            QTest.mouseClick(window,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,point)
+            QTest.mouseMove(window,QPointF(window.width()-6,6).toPoint())
             QTest.qWait(180)
+            assert nav.property('checked')
             if page == 0:
                 for usage in (False, True):
                     controller.values.update(showUsage=usage, showGpu=usage, showVram=usage, showCpu=usage)
@@ -107,6 +116,13 @@ def main():
                     window.setHeight(window.minimumHeight())
                     QTest.qWait(100)
                     start = window.findChild(QQuickItem, 'startButton')
+                    actions=[window.findChild(QQuickItem,name) for name in (
+                        'selectRegionAction','fullScreenAction','translateOnceAction','toggleOverlayAction')]
+                    assert max(button.width() for button in actions)-min(button.width() for button in actions)<=1
+                    assert all(button.height()==46 for button in actions)
+                    assert actions[0].x()==actions[2].x() and actions[1].x()==actions[3].x()
+                    assert logo.property('smooth') and logo.property('mipmap')
+                    assert logo.property('sourceSize').width()==256
                     assert start.isVisible() and start.height() >= 58
                     bottom = start.mapToScene(QPointF(0, start.height())).y()
                     assert bottom <= window.height() - 35, (bottom, window.height())
@@ -138,6 +154,15 @@ def main():
                 assert window.grabWindow().save(str(output/(theme+'-download-log.png')))
                 window.findChild(QQuickItem,'operationPanel').setProperty('logExpanded',False)
                 controller.values.update(busy=False,log='');controller.changed.emit()
+        toggle=window.findChild(QQuickItem,'themeToggle')
+        point=toggle.mapToScene(QPointF(toggle.width()/2,toggle.height()/2)).toPoint()
+        for _ in range(2):
+            was_light=controller.values['theme'] in ('white','sepia')
+            assert toggle.property('iconName')==('moon' if was_light else 'sun')
+            QTest.mouseClick(window,Qt.MouseButton.LeftButton,Qt.KeyboardModifier.NoModifier,point)
+            QTest.qWait(60)
+            assert controller.values['theme']==('black' if was_light else 'white')
+        QTest.mouseMove(window,QPointF(window.width()-6,6).toPoint())
     if warnings:
         raise AssertionError('\n'.join(warnings))
     window.hide()

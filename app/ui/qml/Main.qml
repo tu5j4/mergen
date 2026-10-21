@@ -7,9 +7,9 @@ ApplicationWindow {
     id: root
     visible: true
     title: "mergen"
-    width: 660; height: 600
-    minimumWidth: 640
-    minimumHeight: tabs.currentIndex === 0 ? Math.max(480, Math.ceil(mainColumn.implicitHeight + root.footer.implicitHeight + 40)) : 520
+    width: 580; height: 560
+    minimumWidth: 560
+    minimumHeight: tabs.currentIndex === 0 ? Math.max(440, Math.ceil(mainColumn.implicitHeight + root.footer.implicitHeight + 40)) : 520
     font.capitalization: Font.AllLowercase
     property bool usageVisible: root.s.showUsage
     function compactMain() {
@@ -61,12 +61,35 @@ ApplicationWindow {
             play:'<path fill="'+ink+'" stroke="none" d="m7 3 15 9-15 9z"/>',
             stop:'<rect x="5" y="5" width="14" height="14" rx="2"/>',
             globe:'<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
+            sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+            moon:'<path d="M20.7 13.2A8.7 8.7 0 0 1 10.8 3.3a8.7 8.7 0 1 0 9.9 9.9Z"/>',
             puzzle:'<path d="M4 4h6a3 3 0 1 1 4 0h6v6a3 3 0 1 0 0 4v6h-6a3 3 0 1 0-4 0H4v-6a3 3 0 1 1 0-4z"/>'
         }[name] || '')+'</svg>')
     }
 
     component LabelText: Label { font.capitalization: Font.AllLowercase; color: root.fg; wrapMode: Text.WordWrap; Layout.fillWidth: true }
     component Quiet: LabelText { color: root.muted; font.pixelSize: 12 }
+    component IconAction: Button {
+        id: iconButton
+        property string iconName: ""
+        property string hint: ""
+        implicitWidth: 44; implicitHeight: 44
+        padding: 11
+        Accessible.name: hint
+        contentItem: Glyph { name: iconButton.iconName; ink: iconButton.checked ? root.accent : root.muted }
+        background: Rectangle {
+            radius: 10
+            color: iconButton.checked ? Qt.rgba(root.accent.r,root.accent.g,root.accent.b,.10) : iconButton.down || iconButton.hovered ? root.field : "transparent"
+            border.color: iconButton.activeFocus ? root.accent : "transparent"
+            Behavior on color { ColorAnimation { duration: 140 } }
+        }
+        ToolTip {
+            visible: iconButton.hovered; delay: 450
+            x: iconButton.width + 8; y: (iconButton.height-height)/2
+            contentItem: Text { text: iconButton.hint; color: root.fg; font: root.font }
+            background: Rectangle { color: root.surface; radius: 8; border.color: root.line }
+        }
+    }
     component Action: Button {
         id: actionButton
         property string iconName: ""
@@ -214,42 +237,40 @@ ApplicationWindow {
     QtObject { id: tabs; property int currentIndex: 0; onCurrentIndexChanged: Qt.callLater(root.compactMain) }
     Rectangle {
         id: sidebar
-        width: 154; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+        objectName: "navigationRail"
+        width: 72; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
         color: root.surface
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.line }
         ColumnLayout {
-            anchors.fill: parent; anchors.margins: 16; spacing: 8
-            RowLayout {
-                Layout.topMargin: 12; Layout.bottomMargin: 28; spacing: 10
-                Image { source: "../../../assets/mergen-logo.png"; fillMode: Image.PreserveAspectFit; Layout.preferredWidth: 25; Layout.preferredHeight: 25 }
-                Label { text: "mergen"; color: root.fg; font.pixelSize: 24; font.weight: Font.DemiBold }
+            anchors.fill: parent; anchors.margins: 14; spacing: 8
+            Image {
+                objectName: "railLogo"
+                source: "../../../assets/mergen-logo.png"; fillMode: Image.PreserveAspectFit
+                sourceSize: Qt.size(256,256)
+                smooth: true; mipmap: true
+                Layout.alignment: Qt.AlignHCenter; Layout.topMargin: 12; Layout.bottomMargin: 24
+                Layout.preferredWidth: 32; Layout.preferredHeight: 32
+                Accessible.name: "mergen"
             }
             Repeater {
-                model: [{label:"Çeviri",icon:"region",page:0},{label:"Modeller",icon:"puzzle",page:2},{label:"Ayarlar",icon:"settings",page:1},{label:"Güncellemeler",icon:"refresh",page:3}]
-                Button {
-                    id: nav
+                model: [{label:"çeviri",icon:"region",page:0},{label:"modeller",icon:"puzzle",page:2},{label:"ayarlar",icon:"settings",page:1},{label:"güncellemeler",icon:"refresh",page:3}]
+                IconAction {
                     required property var modelData
-                    Layout.fillWidth: true; implicitHeight: 46
+                    objectName: "nav_" + modelData.page
+                    Layout.fillWidth: true
+                    iconName: modelData.icon; hint: modelData.label
                     checked: tabs.currentIndex === modelData.page
                     onClicked: tabs.currentIndex = modelData.page
-                    Accessible.name: modelData.label
-                    contentItem: RowLayout {
-                        spacing: 10
-                        Glyph { name: nav.modelData.icon; ink: nav.checked ? root.accent : root.muted; Layout.preferredWidth: 19; Layout.preferredHeight: 19 }
-                        Label { text: nav.modelData.label; color: nav.checked ? root.accent : root.fg; font.pixelSize: 13; Layout.fillWidth: true }
-                    }
-                    background: Rectangle {
-                        radius: 8
-                        color: nav.checked ? Qt.rgba(root.accent.r,root.accent.g,root.accent.b,.10) : nav.hovered ? root.field : "transparent"
-                        border.color: nav.activeFocus ? root.accent : "transparent"
-                        Behavior on color { ColorAnimation { duration: 140 } }
-                    }
                 }
             }
             Item { Layout.fillHeight: true }
-            Quiet { text: "●  Yerel çalışma"; font.pixelSize: 12 }
-            Action { text: root.lightTheme ? "Koyu görünüm" : "Açık görünüm"; Layout.fillWidth: true; onClicked: controller.setting("panel_theme",root.lightTheme ? "black" : "white") }
-            Quiet { text: "mergen · " + root.s.version; font.pixelSize: 11; Layout.topMargin: 6 }
+            IconAction {
+                objectName: "themeToggle"
+                Layout.fillWidth: true; Layout.bottomMargin: 4
+                iconName: root.lightTheme ? "moon" : "sun"
+                hint: root.lightTheme ? "koyu görünüme geç" : "açık görünüme geç"
+                onClicked: controller.setting("panel_theme",root.lightTheme ? "black" : "white")
+            }
         }
     }
     Connections {
@@ -292,26 +313,15 @@ ApplicationWindow {
                         }
                     }
                 }
-                RowLayout {
-                    Quiet { text: "Hedef dil" }
-                    Label { text: "Türkçe"; color: root.fg; font.weight: Font.DemiBold }
-                }
                 Quiet { text: "Çeviri alanı" }
-                RowLayout {
-                    Layout.fillWidth: true; spacing: 8
-                    Action { text: "Bölge seç"; iconName: "region"; Layout.fillWidth: true; onClicked: controller.action("region") }
-                    Action { text: "Tüm ekran"; iconName: "full"; Layout.fillWidth: true; onClicked: controller.action("full") }
-                }
-                RowLayout {
-                    Layout.fillWidth: true; spacing: 8
-                    Action { text: "Şimdi çevir"; iconName: "refresh"; Layout.fillWidth: true; onClicked: controller.action("once") }
-                    Action { text: "Gizle / Göster"; iconName: "eye"; Layout.fillWidth: true; onClicked: controller.action("overlay") }
-                    Action {
-                        Layout.preferredWidth: 46
-                        iconName: "settings"
-                        Accessible.name: "ayarlar"
-                        onClicked: tabs.currentIndex = 1
-                    }
+                GridLayout {
+                    objectName: "translationActions"
+                    Layout.fillWidth: true; columns: 2; columnSpacing: 8; rowSpacing: 8
+                    uniformCellWidths: true; uniformCellHeights: true
+                    Action { objectName: "selectRegionAction"; text: "Bölge seç"; iconName: "region"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("region") }
+                    Action { objectName: "fullScreenAction"; text: "Tüm ekran"; iconName: "full"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("full") }
+                    Action { objectName: "translateOnceAction"; text: "Şimdi çevir"; iconName: "refresh"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("once") }
+                    Action { objectName: "toggleOverlayAction"; text: "Gizle / Göster"; iconName: "eye"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("overlay") }
                 }
                 Toggle { text: "Kaydırmayı takip et"; checked: root.s.scrollTracking; onClicked: controller.setting("scroll_tracking",checked) }
                 RowLayout {
