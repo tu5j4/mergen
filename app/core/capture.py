@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+import sys
 
 
 class ScreenCapturer:
@@ -12,6 +13,18 @@ class ScreenCapturer:
 
     def __init__(self) -> None:
         self._sct = None
+        self._underlay = None
+
+    def grab_under_overlay(self,left,top,width,height,hwnd,areas):
+        if sys.platform!='win32':return None
+        from .window_capture import WindowsUnderlayCapture
+        try:
+            if self._underlay is None:self._underlay=WindowsUnderlayCapture()
+            image=self.grab(left,top,width,height)
+            if image is None:return None
+            return self._underlay.restore(image,left,top,hwnd,areas)
+        except (OSError,ValueError):
+            return None
 
     def grab(self, left: int, top: int, width: int, height: int) -> np.ndarray | None:
         if width <= 0 or height <= 0:

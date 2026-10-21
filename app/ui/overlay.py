@@ -3,7 +3,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QRect, QRectF, Qt, Slot
+from PySide6.QtCore import QRect, QRectF, Qt, Slot, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath
 from PySide6.QtWidgets import QWidget
 
@@ -14,6 +14,7 @@ _TEXT_FLAGS = int(Qt.AlignmentFlag.AlignCenter) | int(Qt.TextFlag.TextWordWrap)
 
 
 class OverlayWindow(QWidget):
+    capture_areas_changed = Signal(list)
     def __init__(self, settings: Settings) -> None:
         super().__init__(
             None,
@@ -70,6 +71,7 @@ class OverlayWindow(QWidget):
     def clear_blocks(self) -> None:
         self._blocks = []
         self._layout = []
+        self.capture_areas_changed.emit([])
         self.update()
 
     def refresh_style(self) -> None:
@@ -174,6 +176,8 @@ class OverlayWindow(QWidget):
             inner = rect.adjusted(3, 2, -3, -2)
             font = self._cached_font(b["text"], inner, compact)
             self._layout.append((rect, b["text"], font, bg, fg))
+        self.capture_areas_changed.emit([
+            (r.x()-2,r.y()-2,r.width()+4,r.height()+4) for r,*_ in self._layout])
 
     # ------------------------------------------------------------------
     def paintEvent(self, _event) -> None:

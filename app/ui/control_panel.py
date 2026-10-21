@@ -76,6 +76,7 @@ class ControlPanel(QWidget):
 
         # Overlay: başlangıçta birincil ekranı kaplar (boş ve tıklama geçirgen)
         self.overlay = OverlayWindow(self.s)
+        self.overlay.capture_areas_changed.connect(self._on_overlay_areas_changed)
         self.overlay.setGeometry(QGuiApplication.primaryScreen().geometry())
         self.overlay.show()
         self.overlay.ensure_platform_setup()
@@ -511,7 +512,7 @@ class ControlPanel(QWidget):
         if self.worker is not None:
             return
         self.thread = QThread(self)
-        self.worker = TranslationWorker(self.s, self.overlay.is_capture_excluded())
+        self.worker = TranslationWorker(self.s, self.overlay.is_capture_excluded(),int(self.overlay.winId()))
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.status.connect(self._set_status)
@@ -539,6 +540,9 @@ class ControlPanel(QWidget):
                 self.worker.ack_hidden()
         elif self.s.overlay_visible:
             self.overlay.show()
+
+    def _on_overlay_areas_changed(self,areas) -> None:
+        if self.worker:self.worker.set_overlay_areas(areas)
 
     def _on_worker_error(self, msg: str) -> None:
         self._set_status(f"HATA: {msg}")

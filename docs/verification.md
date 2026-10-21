@@ -23,3 +23,9 @@
 - 0.3.1 github’da yayımlandı. kişisel günlükler, test dosyaları ve model ağırlıkları kaynak dışa aktarımında bulunmaz.
 - aynı sürümün arayüz düzenlemesinde sloganlar, sabit hedef dil satırı ve tekrarlanan ayarlar düğmesi kaldırıldı. sol menü 72 piksel genişliğinde yalnızca simgeler içerir; logo ortalıdır, görünüm tek güneş/ay düğmesiyle değiştirilir. pencerenin başlangıç genişliği 580 pikseldir. dört çeviri düğmesi aynı ızgarada eşit boyutludur. mevcut 1280 × 1280 logo korunmuş, küçük boyutta çizimi yumuşak ölçekleme ve mipmap ile düzeltilmiştir.
 - sistem göstergeleri tek satırda, kaydırmasız gösterilir. durum, ilerleme, kaydırma çubukları ve açılır teknik günlük tema renklerini kullanır. beş tema, dört sayfa, en küçük pencere boyutları, simgeli gezinme ve güneş/ay düğmesi sınandı. düğme ölçüleri ve logo çizim ayarları normal ve %200 ekran ölçeğinde kontrol edildi.
+
+## çeviri katmanı titreme düzeltmesi
+
+- paylaşıma açık katman her ekran taramasında gizleniyordu. windows'ta yalnızca çizili çeviri alanlarının altındaki pencere içeriği yeniden alınır; katman görünür kalır. üstteki diğer pencerelerin görüntüsü korunur. desteklenmeyen, kilitlenmiş veya siyah görüntü veren pencerelerde mevcut temiz yakalama yolu kullanılır.
+- ayrı edge profiliyle açılan yerel test sayfasının arka planı değişirken 25 kare okundu: çeviri katmanında sıfır gizleme isteği ve sıfır görünürlük olayı kaydedildi. normal ekran yakalamasında katman görünmeye devam etti; altındaki değişen içerik güncel yakalandı. discord yayını ayrıca denenmedi.
+- 176 otomatik test geçti. fiziksel/mantıksal koordinat dönüşümü, pencere yakalama başarısız olduğunda temiz görüntüye dönüş, kullanıcının gizlediği çevirinin kendiliğinden açılmaması ve genişleyen çeviri kutularının gerçek çizim sınırları sınandı. yanıt vermeyen bir pencerenin çeviri iş parçacığını bekletmemesi ve sınırsız yakalama iş parçacığı oluşturmaması da sınandı. bu düzeltme 0.3.1 paketine eklendi.

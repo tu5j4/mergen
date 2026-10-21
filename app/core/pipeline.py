@@ -101,7 +101,7 @@ class TranslationWorker(QObject):
     clear_requested = Signal()
     hide_request = Signal(bool)
 
-    def __init__(self, settings: Settings, overlay_excluded: bool) -> None:
+    def __init__(self, settings: Settings, overlay_excluded: bool, overlay_handle=None) -> None:
         super().__init__()
         self.s = settings
         self._lock = threading.Lock()
@@ -114,6 +114,8 @@ class TranslationWorker(QObject):
         self._ocr_engine = settings.ocr_engine
         self._ocr_version = 0
         self._overlay_excluded = overlay_excluded
+        self._overlay_handle = overlay_handle
+        self._overlay_areas = []
         self._hide_ack = threading.Event()
         self._overlay_has_content = False
         self._session_context = SessionContext()
@@ -169,6 +171,9 @@ class TranslationWorker(QObject):
 
     def ack_hidden(self) -> None:
         self._hide_ack.set()
+
+    def set_overlay_areas(self,areas) -> None:
+        with self._lock:self._overlay_areas=list(areas)
 
     def reset_translation_context(self, enabled: bool | None = None) -> None:
         with self._lock:
@@ -283,7 +288,14 @@ class TranslationWorker(QObject):
     # ------------------ yakalama ------------------
     def _grab(self, capturer: ScreenCapturer, region: tuple) -> np.ndarray | None:
         x, y, w, h = region[:4]
-        need_hide = (not self._overlay_excluded) and self._overlay_has_content
+        need_hide = (not self._overlay_excluded) and self._overlay_has_content and self.s.overlay_visible
+        if need_hide and self._overlay_handle and len(region)>=6:
+            with self._lock:areas=list(self._overlay_areas)
+            if areas:
+                sx,sy=w/max(1,region[4]),h/max(1,region[5])
+                physical=[(a*sx,b*sy,c*sx,d*sy) for a,b,c,d in areas]
+                image=capturer.grab_under_overlay(x,y,w,h,self._overlay_handle,physical)
+                if image is not None:return image
         if need_hide:
             self._hide_ack.clear()
             self.hide_request.emit(True)

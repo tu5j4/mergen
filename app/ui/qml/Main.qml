@@ -424,7 +424,7 @@ ApplicationWindow {
                         LabelText { text: "okuma"; font.pixelSize: 18 }
                         Toggle { text: "kaydırmayı takip et"; checked: root.s.scrollTracking; onClicked: controller.setting("scroll_tracking",checked) }
                         Toggle { objectName: "shareTranslationsToggle"; text: "Çevirileri ekran paylaşımında göster"; checked: root.s.shareTranslations; onClicked: controller.setting("share_translations",checked) }
-                        Quiet { text: "Tüm ekran paylaşımında çeviri katmanı görünür. Ekran okunurken kısa süre gizlenebilir. Bu ayarı değiştirmek için çeviriyi durdur." }
+                        Quiet { text: "tüm ekran paylaşımında çeviri katmanı görünür. bu ayarı değiştirmek için çeviriyi durdur." }
                         Toggle { text: "çinceyi ingilizce üzerinden çevir"; checked: root.s.chinesePivot; onClicked: controller.setting("chinese_translation_via_english",checked) }
                     }
                 }
