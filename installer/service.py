@@ -5,10 +5,13 @@ import shutil
 import subprocess
 import sys
 import uuid
+import queue
+import threading
 from pathlib import Path
 from .catalog import COMPONENTS, COMMON, TORCH, AMD_PACKAGES
 from .manager import owned_path
 from app.child_process import popen_external
+from app.operations import check_cancelled, Cancelled, kill_tree
 from app.storage import DATA_ROOT, APP_ROOT, WORKER_ROOT, cache_environment
 
 
@@ -40,7 +43,8 @@ def inventory():
     for key,item in COMPONENTS.items():
         paths=model_paths(key)
         ready=all((p/'mergen-ready.json').is_file() for p in paths)
-        state[key]={'ready':ready,'present':any(p.exists() for p in paths),'title':item['title'],'detail':item['detail'],'kind':item['kind']}
+        partial=item['kind']!='environment' and (DATA_ROOT/'cache/model-downloads'/key).is_dir()
+        state[key]={'ready':ready,'present':any(p.exists() for p in paths) or partial,'title':item['title'],'detail':item['detail'],'kind':item['kind']}
     return state
 
 
@@ -53,13 +57,37 @@ def run(args, emit):
         creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     log=DATA_ROOT/'logs/components.log';log.parent.mkdir(parents=True,exist_ok=True)
     tail=[]
-    with log.open('a',encoding='utf-8') as stream:
-        for line in process.stdout:
+    lines=queue.Queue()
+    def read_output():
+        try:
+            for line in process.stdout: lines.put(line)
+        finally: lines.put(None)
+    reader=threading.Thread(target=read_output,daemon=True);reader.start()
+    try:
+      with log.open('a',encoding='utf-8') as stream:
+        while True:
+            check_cancelled()
+            try:line=lines.get(timeout=.1)
+            except queue.Empty:continue
+            if line is None:break
+            if 'Installing collected packages:' in line:
+                event(emit,phase='kütüphaneler diske kuruluyor · indirme tamamlandı',progress=-1)
+            elif line.startswith(('Downloading ','Collecting ')):
+                event(emit,phase='kütüphaneler indiriliyor ve bağımlılıklar hazırlanıyor',progress=-1)
             stream.write(line);stream.flush();tail=(tail+[line.rstrip()])[-8:];emit(line.rstrip())
-    if process.wait()!=0: raise RuntimeError('işlem tamamlanamadı. '+(' · '.join(tail[-3:]) or 'ayrıntılar işlem günlüğünde.'))
+      while process.poll() is None:
+        check_cancelled()
+        threading.Event().wait(.1)
+      check_cancelled()
+      if process.returncode!=0: raise RuntimeError('işlem tamamlanamadı. '+(' · '.join(tail[-3:]) or 'ayrıntılar işlem günlüğünde.'))
+    finally:
+      kill_tree(process)
+      reader.join(timeout=5)
+      process.stdout.close()
 
 
 def install(key, emit=print):
+    check_cancelled()
     if key not in COMPONENTS: raise ValueError('Bilinmeyen bileşen')
     item=COMPONENTS[key]
     if shutil.disk_usage(DATA_ROOT).free < (12 if key=='amd' else 7)*1024**3:
@@ -98,6 +126,7 @@ def install(key, emit=print):
             if key=='cpu':
                 check+=";import paddle;paddle.set_device('cpu');assert float(paddle.matmul(paddle.ones([4,4]),paddle.ones([4,4])).sum().numpy())==64;print('Paddle CPU işlem testi geçti')"
         run([python,'-c',check],emit)
+        check_cancelled()
         (path/'mergen-ready.json').write_text(json.dumps({'runtime':key,'tensor_test':True}),encoding='utf-8')
         return
     state=inventory()
@@ -112,13 +141,17 @@ def remove(key, emit=print):
     if key not in COMPONENTS: raise ValueError('Bilinmeyen bileşen')
     # Validate all paths and reparse points before removing any directory.
     targets=[owned_path(DATA_ROOT,p.relative_to(DATA_ROOT)) for p in model_paths(key)]
+    if COMPONENTS[key]['kind']!='environment':
+        targets.append(owned_path(DATA_ROOT,Path('cache/model-downloads')/key))
     for path in targets:
+        check_cancelled()
         if path.is_dir(): shutil.rmtree(path)
         emit('Kaldırıldı: '+path.name)
     # Shared download cache remains reusable; removal never touches global caches.
 
 
 def event(emit, **data):
+    check_cancelled()
     emit('@mergen:'+json.dumps(data,ensure_ascii=True))
 
 def task_components(settings,task):
@@ -161,7 +194,8 @@ def validate(settings, emit=print):
                 # Japanese/Chinese share the same general recognition weights.
                 # Korean must exercise its own recognizer rather than switching to English.
                 language=settings.source_lang if task!='ocr' or settings.source_lang=='ko' else 'en'
-                client=RuntimeClient(task,backend,language=language,model=str(settings.model_path))
+                client=RuntimeClient(task,backend,language=language,model=str(settings.model_path),
+                    progress=lambda phase:event(emit,phase=title+' · '+phase,progress=-1))
                 if task=='translate':
                     samples={'en':'Hello, how are you?','ja':'こんにちは。元気ですか？','ko':'안녕하세요. 잘 지내세요?',
                              'zh':'你好，你好吗？','zh_tw':'您好，您好嗎？'}
@@ -187,6 +221,8 @@ def validate(settings, emit=print):
                         raise RuntimeError('manga-ocr japonca örneği okuyamadı')
                     row['result']=output[0][:120]
                 row.update(status='passed',message='model testi geçti · '+client.device,device=client.device)
+        except Cancelled:
+            raise
         except Exception as exc:
             row.update(status='failed',message=str(exc))
         finally:
@@ -197,6 +233,7 @@ def validate(settings, emit=print):
         event(emit,kind='validation',row=row,phase=title+' · '+row['message'],progress=(index+1)*100//len(checks))
     report={'ok':all(row['status']=='passed' for row in rows),'rows':rows,'language':settings.source_lang,
             'translation':settings.translation_backend,'ocr':settings.ocr_backend,'manga':settings.manga_backend}
+    check_cancelled()
     (DATA_ROOT/'last-validation.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     return report
 

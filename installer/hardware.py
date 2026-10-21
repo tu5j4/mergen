@@ -8,15 +8,29 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
+from app.child_process import popen_external
+from app.operations import check_cancelled, kill_tree
 
 
 def capture(command):
+    process=None
     try:
-        return subprocess.check_output(command, text=True, encoding='utf-8', errors='replace',
-            timeout=20, stderr=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)).strip()
+        process=popen_external(command,text=True,encoding='utf-8',errors='replace',
+            stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        deadline=time.monotonic()+20
+        while True:
+            check_cancelled()
+            try:
+                output,_=process.communicate(timeout=.1)
+                return output.strip() if process.returncode==0 else ''
+            except subprocess.TimeoutExpired:
+                if time.monotonic()>=deadline:return ''
     except (OSError, subprocess.SubprocessError):
         return ''
+    finally:
+        if process is not None:kill_tree(process)
 
 
 def vendor(name):

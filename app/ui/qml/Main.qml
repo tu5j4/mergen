@@ -453,12 +453,15 @@ ApplicationWindow {
                 }
                 Quiet { text: "yalnızca imzalı sürüm paketleri kurulur. ayarlar ve modeller güncellemede korunur." }
                 Action { text: "github · mergen"; Layout.fillWidth: true; onClicked: controller.action("github") }
+                Quiet { text: "uygulamayı kaldırdığında modellerin ve ayarların korunur." }
+                Action { text: "mergen uygulamasını kaldır"; Layout.fillWidth: true; enabled: root.s.canUninstall && !root.s.busy; onClicked: controller.action("uninstall") }
             }
         }
     }
     footer: ColumnLayout {
         spacing: 3
         BusyIndicator { Layout.alignment: Qt.AlignHCenter; running: root.s.busy; visible: running; implicitWidth: 24; implicitHeight: 24 }
+        Action { text: root.s.cancelling ? "durduruluyor…" : "vazgeç"; objectName: "cancelOperation"; Layout.alignment: Qt.AlignHCenter; visible: root.s.busy; enabled: !root.s.cancelling; onClicked: controller.action("cancel") }
         Quiet { Layout.leftMargin: sidebar.width + 24; Layout.rightMargin: 24; Layout.topMargin: 12; Layout.bottomMargin: 18; text: root.s.busy ? root.s.phase : root.s.status; maximumLineCount: 2; elide: Text.ElideRight }
     }
 }

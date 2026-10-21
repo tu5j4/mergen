@@ -1,4 +1,4 @@
-#define AppVersion "0.3.0"
+#define AppVersion "0.3.1"
 [Setup]
 AppId={{956D0D15-EA99-4888-B0B3-E9A0B6813B4F}
 AppName=mergen
@@ -13,6 +13,8 @@ OutputDir=..\release
 OutputBaseFilename=mergen-setup-{#AppVersion}
 SetupIconFile=..\assets\mergen.ico
 UninstallDisplayIcon={app}\Mergen.exe
+UninstallDisplayName=mergen
+Uninstallable=yes
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -31,6 +33,7 @@ Source: "..\dist\Mergen\_internal\VCRUNTIME140*.dll"; DestDir: "{localappdata}\m
 Source: "..\dist\Mergen\_internal\vcomp140.dll"; DestDir: "{localappdata}\mergen-next\python"; Flags: ignoreversion; Tasks: pythonruntime
 [Icons]
 Name: "{group}\mergen"; Filename: "{app}\Mergen.exe"
+Name: "{group}\mergen uygulamasını kaldır"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\mergen"; Filename: "{app}\Mergen.exe"; Tasks: desktopicon
 [Run]
 Filename: "{app}\Mergen.exe"; Description: "mergen uygulamasini ac"; Flags: nowait postinstall skipifsilent

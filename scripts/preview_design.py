@@ -38,6 +38,7 @@ class PreviewController(QObject):
             chinesePivot=False, checkUpdates=False, showGpu=False, showVram=False,
             showCpu=False, showUsage=False, shareTranslations=True,
             usage=dict(gpu='20%', vram='30%', cpu='12%'), running=False, busy=False,
+            cancelling=False, canUninstall=False,
             version=VERSION, status='Hazır · Tasarım önizlemesi', components=[],
             hardware='Donanım bilgileri burada gösterilir.', recommendation='',
             validation=[], validationSummary='Model testi henüz çalıştırılmadı.',

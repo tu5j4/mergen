@@ -10,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.storage import DATA_ROOT
 from app.runtime_paths import configure_runtime
 configure_runtime()
-os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+os.environ.update(HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1',
+                  PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK='True')
 
 
 def decode_image(value):
@@ -40,8 +41,9 @@ def torch_device(backend):
     return 'cpu'
 
 
-def initialize(args):
+def initialize(args, progress=lambda phase:None):
     if args.task == 'translate' and args.backend in ('cpu','nvidia'):
+        progress('çeviri kütüphaneleri ve model yükleniyor')
         from app.gpu_env import setup_cuda_dll_paths
         setup_cuda_dll_paths()
         from app.core.translator import Translator
@@ -50,6 +52,7 @@ def initialize(args):
             raise RuntimeError('CUDA çeviri testi başarısız; CPU seçeneği kullanılabilir.')
         return model.device, lambda p: model._translate_texts(p['texts'],p['source'],p['target'],p['beam'])
     if args.task == 'ocr':
+        progress('ocr kütüphaneleri yükleniyor · ilk açılış uzun sürebilir')
         import numpy as np
         from paddleocr import PaddleOCR
         from installer.catalog import OCR_NAMES
@@ -77,6 +80,7 @@ def initialize(args):
             setup_cuda_dll_paths()
             device='cpu' if args.backend=='cpu' else 'gpu:0'
             config.update(device=device,enable_mkldnn=False)
+        progress('yerel ocr modelleri açılıyor')
         model=PaddleOCR(**config)
         def infer(p):
             result=next(iter(model.predict(np.array(decode_image(p['image'])))))
@@ -86,6 +90,7 @@ def initialize(args):
             return {k:(v.tolist() if hasattr(v,'tolist') else v) for k,v in data.items()
                     if k in ('rec_boxes','rec_texts','rec_scores')}
         return device,infer
+    progress('model kütüphaneleri yükleniyor')
     import torch
     from transformers import AutoTokenizer
     device=torch_device(args.backend)
@@ -128,7 +133,7 @@ def main():
     protocol=sys.stdout;sys.stdout=sys.stderr
     def reply(data): protocol.write(json.dumps(data,ensure_ascii=True)+'\n');protocol.flush()
     try:
-        device,infer=initialize(args);reply({'ok':True,'device':device})
+        device,infer=initialize(args,lambda phase:reply({'event':'progress','phase':phase}));reply({'ok':True,'device':device})
     except Exception as exc:
         import traceback
         folder=DATA_ROOT/'logs';folder.mkdir(parents=True,exist_ok=True)

@@ -18,8 +18,10 @@ def external_environment(environment):
     return result
 
 def popen_external(args,**kwargs):
+    from app.operations import check_cancelled, own_process
+    check_cancelled()
     kwargs['env']=external_environment(kwargs.get('env',os.environ))
-    if os.name!='nt' or not getattr(sys,'frozen',False):return subprocess.Popen(args,**kwargs)
+    if os.name!='nt' or not getattr(sys,'frozen',False):return own_process(subprocess.Popen(args,**kwargs))
     import ctypes
     kernel=ctypes.WinDLL('kernel32',use_last_error=True)
     kernel.GetDllDirectoryW.argtypes=[ctypes.c_uint32,ctypes.c_wchar_p]
@@ -31,7 +33,7 @@ def popen_external(args,**kwargs):
         previous=buffer.value
         kernel.SetDllDirectoryW(None)
         error_mode=kernel.SetErrorMode(0x0001|0x0002|0x8000)
-        try:return subprocess.Popen(args,**kwargs)
+        try:return own_process(subprocess.Popen(args,**kwargs))
         finally:
             kernel.SetErrorMode(error_mode)
             kernel.SetDllDirectoryW(previous or None)

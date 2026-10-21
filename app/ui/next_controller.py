@@ -1,5 +1,7 @@
 """QML presentation bridge. Model packages are only imported by child processes."""
 import json
+import sys
+import threading
 from pathlib import Path
 from PySide6.QtCore import QObject, Property, Signal, Slot, QThread, QTimer, QRect
 from PySide6.QtWidgets import QApplication
@@ -7,7 +9,8 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 from dataclasses import replace
 from app.config import Settings, LANGS
-from app.storage import DATA_ROOT, APP_ROOT, VERSION, prepare_data
+from app.storage import DATA_ROOT, APP_ROOT, INSTALL_ROOT, VERSION, prepare_data
+from app.operations import operation, check_cancelled, Cancelled
 from installer.catalog import COMPONENTS
 from installer import service
 
@@ -16,9 +19,17 @@ class Job(QThread):
     progress=Signal(str)
     result=Signal(object)
     failed=Signal(str)
-    def __init__(self, fn, parent=None): super().__init__(parent);self.fn=fn
+    cancelled=Signal()
+    def __init__(self, fn, parent=None):
+        super().__init__(parent);self.fn=fn;self.cancel_requested=threading.Event()
+    def cancel(self):self.cancel_requested.set()
     def run(self):
-        try: self.result.emit(self.fn(self.progress.emit))
+        def emit(line):
+            check_cancelled();self.progress.emit(line)
+        try:
+            with operation(self.cancel_requested):result=self.fn(emit)
+            self.result.emit(result)
+        except Cancelled:self.cancelled.emit()
         except Exception as exc: self.failed.emit(str(exc))
 
 
@@ -34,6 +45,7 @@ class Controller(QObject):
             if getattr(self.settings,name)=='local': setattr(self.settings,name,'cpu')
         self.settings.save()
         self.backend=None;self.job=None;self._pending=None;self._stopping=False
+        self._exit_action=None
         self._state={'version':VERSION,'status':'Okumaya hazır.','running':False,'busy':False,'log':'',
                      'components':[],'hardware':'Donanım bilgileri alınıyor…','updates':'Henüz kontrol edilmedi.',
                      'validation':[],'validationSummary':'model testi henüz çalıştırılmadı.','operationTitle':'bileşen durumu','phase':'indirme ve kurulum ayrıntıları burada görünür.','activeComponent':'','progress':-1,
@@ -59,7 +71,9 @@ class Controller(QObject):
 
     @Property('QVariantMap',notify=changed)
     def state(self):
-        return dict(self._state,theme=self.settings.panel_theme,language=self.settings.source_lang,
+        return dict(self._state,cancelling=bool(self.job and self.job.cancel_requested.is_set()),
+            canUninstall=self.uninstaller_path().is_file() and bool(getattr(sys,'frozen',False)),
+            theme=self.settings.panel_theme,language=self.settings.source_lang,
             translationBackend=self.settings.translation_backend,ocrBackend=self.settings.ocr_backend,
             mangaBackend=self.settings.manga_backend,model='1300m' if '1.3B' in self.settings.translation_model else '600m',
             opacity=self.settings.overlay_opacity,mangaEnabled=self.settings.use_manga_ocr,
@@ -92,10 +106,42 @@ class Controller(QObject):
         self._state['components']=[dict(v,key=k) for k,v in service.inventory().items()]
 
     def job_error(self,message):
+        if self.job and self.job.cancel_requested.is_set():
+            self.job_cancelled();return
         self._state['phase']='işlem tamamlanamadı · '+message
         self._state['operationTitle']='işlem tamamlanamadı'
         self._state['validationSummary']='işlem tamamlanamadı; günlüğü kontrol edip yeniden deneyebilirsin.'
         self.append(message);self.status(message)
+
+    def job_cancelled(self):
+        self._state['validation']=[dict(row,status='cancelled',message='test durduruldu.') if row.get('status')=='running' else row for row in self._state['validation']]
+        self._state.update(operationTitle='işlemden vazgeçildi',phase='işlem durduruldu. tamamlanan bileşenler korundu.',
+            activeComponent='',progress=-1,validationSummary='yarım kalan bileşenleri yeniden indirerek devam edebilirsin.')
+        self.status('işlemden vazgeçildi.')
+
+    def cancel_job(self):
+        if self.job:
+            self.job.cancel()
+            self._state['phase']='işlem durduruluyor…'
+            self.status('işlem durduruluyor…')
+
+    @staticmethod
+    def uninstaller_path():return INSTALL_ROOT/'unins000.exe'
+
+    def finish_exit(self):
+        if self.job:return
+        if self._stopping:
+            QTimer.singleShot(100,self.finish_exit);return
+        action=self._exit_action
+        def finish():
+            if action=='uninstall':
+                try:
+                    from app.child_process import popen_external
+                    popen_external([str(self.uninstaller_path())],cwd=INSTALL_ROOT)
+                except OSError as exc:
+                    self._exit_action=None;self.status('kaldırıcı açılamadı: '+str(exc));return
+            QApplication.instance().quit()
+        self.release_backend(finish)
 
     def validation_done(self,report):
         self._state['validation']=report['rows']
@@ -112,6 +158,7 @@ class Controller(QObject):
         self.job=Job(fn,self)
         self.job.progress.connect(self.append)
         self.job.failed.connect(self.job_error)
+        self.job.cancelled.connect(self.job_cancelled)
         self._job_done=done;self._job_result=None;self._job_ok=False
         self.job.result.connect(self.job_result)
         self.job.finished.connect(self.job_finished)
@@ -119,16 +166,21 @@ class Controller(QObject):
     def job_result(self,result):
         self._job_result=result;self._job_ok=True
     def job_finished(self):
-        job,self.job=self.job,None;job.deleteLater();self._state['busy']=False;self.changed.emit()
+        job,self.job=self.job,None
+        cancelled=job.cancel_requested.is_set()
+        job.deleteLater();self._state['busy']=False;self.changed.emit()
         done=self._job_done
-        if self._job_ok and done:
+        if cancelled:self.job_cancelled()
+        if self._job_ok and not cancelled and not self._exit_action and done:
             try:done(self._job_result)
             except Exception as exc:self.status(str(exc))
-        QTimer.singleShot(0,self.refresh)
+        if self._exit_action:self.finish_exit()
+        elif cancelled:self.scan_components();self.changed.emit()
+        else:QTimer.singleShot(0,self.refresh)
 
     @Slot()
     def refresh(self):
-        if self.job is not None:return
+        if self.job is not None or self._exit_action:return
         # Package scanning uses ready markers, so refresh never imports model runtimes.
         self.scan_components()
         if self._state['hardware'].startswith('Donanım'):
@@ -210,14 +262,22 @@ class Controller(QObject):
 
     @Slot(str)
     def action(self,name):
+        if name=='cancel':self.cancel_job();return
         if name=='quit':
-            if self.job or self._stopping:self.status('Kurulum işleminin tamamlanmasını bekleyin.');return
-            self.release_backend(QApplication.instance().quit);return
+            self._exit_action='quit'
+            if self.job:self.cancel_job()
+            else:self.finish_exit()
+            return
         if name=='github':
             QDesktopServices.openUrl(QUrl('https://github.com/tu5j4/mergen'));return
         if self.job or self._stopping:self.status('Devam eden işlemin tamamlanmasını bekleyin.');return
         try:
-            if name in ('region','full','overlay','start','once'):
+            if name=='uninstall':
+                if not getattr(sys,'frozen',False) or not self.uninstaller_path().is_file():
+                    self.status('kaldırıcı yalnızca kurulu uygulamada kullanılabilir.');return
+                self._pending=('uninstall',None)
+                self.confirmation.emit('mergen uygulamasını kaldır','mergen kaldırılacak. indirdiğin modeller ve ayarların korunur. devam edilsin mi?')
+            elif name in ('region','full','overlay','start','once'):
                 if name in ('start','once'):
                     missing=service.missing_components(self.settings)
                     if missing:
@@ -239,7 +299,7 @@ class Controller(QObject):
                 else:self.status('Konuşma hafızası boş.')
             elif name=='validate':
                 self._state.update(operationTitle='model testi',phase='seçili ortamlar kontrol ediliyor…',validation=[],validationSummary='model testi sürüyor…',progress=0)
-                self.navigate.emit(1)
+                self.navigate.emit(2)
                 self.release_backend(lambda:self.start_job(lambda emit:service.validate(self.settings,emit),self.validation_done))
             elif name=='check-update':
                 from app.updates import check
@@ -263,6 +323,11 @@ class Controller(QObject):
         pending,self._pending=self._pending,None
         if not accepted or not pending:return
         operation,key=pending
+        if operation=='uninstall':
+            self._exit_action='uninstall'
+            if self.job:self.cancel_job()
+            else:self.finish_exit()
+            return
         if operation=='plan':
             def done(report):
                 self.settings.translation_backend=key['translation'];self.settings.ocr_backend='cpu';self.settings.manga_backend=key['translation']
