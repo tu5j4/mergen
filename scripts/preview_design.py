@@ -83,6 +83,11 @@ def main():
     if not engine.rootObjects():
         raise RuntimeError('\n'.join(warnings))
     window = engine.rootObjects()[0]
+    def visual_item(parent,name):
+        if parent.objectName()==name:return parent
+        for child in parent.childItems():
+            found=visual_item(child,name)
+            if found:return found
     if '--check' not in sys.argv:
         return app.exec()
     output = ROOT.parent / 'tasarimlar' / 'temalar'
@@ -95,7 +100,7 @@ def main():
             QTest.qWait(180)
             if page == 0:
                 for usage in (False, True):
-                    controller.values.update(showUsage=usage, showGpu=usage)
+                    controller.values.update(showUsage=usage, showGpu=usage, showVram=usage, showCpu=usage)
                     controller.changed.emit()
                     QTest.qWait(100)
                     window.setWidth(window.minimumWidth())
@@ -105,10 +110,34 @@ def main():
                     assert start.isVisible() and start.height() >= 58
                     bottom = start.mapToScene(QPointF(0, start.height())).y()
                     assert bottom <= window.height() - 35, (bottom, window.height())
-                controller.values.update(showUsage=False, showGpu=False)
+                    if usage:
+                        panel=window.findChild(QQuickItem,'usagePanel')
+                        bottom=panel.mapToScene(QPointF(0,panel.height())).y()
+                        assert bottom <= window.height()-44, (theme,bottom,window.height())
+                        for key in ('gpu','vram','cpu'):
+                            metric=visual_item(window.contentItem(),'usageMetric_'+key)
+                            assert metric.isVisible() and metric.width()>60
+                        assert window.grabWindow().save(str(output/(theme+'-usage.png')))
+                controller.values.update(showUsage=False, showGpu=False, showVram=False, showCpu=False)
                 controller.changed.emit()
                 QTest.qWait(100)
                 assert window.grabWindow().save(str(output / (theme + '.png')))
+            if page == 2:
+                controller.values.update(busy=True,operationTitle='önerilen bileşenler kuruluyor',
+                    phase='model indiriliyor · 412/2460 mib · ortalama 18 mib/sn',progress=17,
+                    log='kütüphaneler indirildi.\nmodel dosyaları hazırlanıyor.')
+                controller.changed.emit();QTest.qWait(100)
+                cancel=window.findChild(QQuickItem,'cancelOperation')
+                assert cancel.isVisible() and cancel.isEnabled()
+                point=cancel.mapToScene(QPointF(cancel.width(),cancel.height()))
+                assert point.x()<=window.width() and point.y()<=window.height()
+                assert window.grabWindow().save(str(output/(theme+'-download.png')))
+                window.findChild(QQuickItem,'operationPanel').setProperty('logExpanded',True)
+                QTest.qWait(100)
+                assert window.findChild(QQuickItem,'operationLog').isVisible()
+                assert window.grabWindow().save(str(output/(theme+'-download-log.png')))
+                window.findChild(QQuickItem,'operationPanel').setProperty('logExpanded',False)
+                controller.values.update(busy=False,log='');controller.changed.emit()
     if warnings:
         raise AssertionError('\n'.join(warnings))
     window.hide()

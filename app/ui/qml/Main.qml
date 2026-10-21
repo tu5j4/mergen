@@ -7,16 +7,18 @@ ApplicationWindow {
     id: root
     visible: true
     title: "mergen"
-    width: 720; height: 740
-    minimumWidth: 680
-    minimumHeight: tabs.currentIndex === 0 ? Math.ceil(primaryColumn.implicitHeight + root.footer.implicitHeight + 64) : 560
+    width: 660; height: 600
+    minimumWidth: 640
+    minimumHeight: tabs.currentIndex === 0 ? Math.max(480, Math.ceil(mainColumn.implicitHeight + root.footer.implicitHeight + 40)) : 520
     font.capitalization: Font.AllLowercase
     property bool usageVisible: root.s.showUsage
     function compactMain() {
         if (tabs.currentIndex === 0)
-            root.height = root.minimumHeight + (root.s.showUsage ? usageContent.implicitHeight + 20 : 12)
+            root.height = root.minimumHeight
     }
     onUsageVisibleChanged: Qt.callLater(root.compactMain)
+    onMinimumHeightChanged: Qt.callLater(root.compactMain)
+    Component.onCompleted: Qt.callLater(root.compactMain)
     font.family: "Segoe UI"
     font.pixelSize: 13
     property var s: controller.state
@@ -125,6 +127,49 @@ ApplicationWindow {
             border.color: parent.flat ? "transparent" : root.line
         }
     }
+    component ThemeScrollBar: ScrollBar {
+        id: scrollBar
+        implicitWidth: 6
+        padding: 0
+        contentItem: Rectangle {
+            implicitWidth: 6; implicitHeight: 30; radius: 3
+            color: scrollBar.pressed ? root.accent : root.muted
+            opacity: scrollBar.pressed || scrollBar.hovered ? .65 : .28
+        }
+        background: Item {}
+    }
+    component ThemeScrollView: ScrollView {
+        id: scrollView
+        clip: true; contentWidth: availableWidth
+        rightPadding: 10
+        ScrollBar.vertical: ThemeScrollBar {
+            parent: scrollView
+            x: scrollView.width - width; y: scrollView.topPadding
+            height: scrollView.availableHeight
+            visible: size < 1
+        }
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+    }
+    component ThemeProgress: ProgressBar {
+        id: meter
+        implicitHeight: 5
+        padding: 0
+        background: Rectangle { implicitHeight: 5; radius: height / 2; color: root.line }
+        contentItem: Item {
+            clip: true; implicitHeight: 5
+            Rectangle {
+                id: fill
+                property real offset: 0
+                height: parent.height; radius: height / 2; color: root.accent
+                width: meter.indeterminate ? parent.width * .24 : parent.width * meter.visualPosition
+                x: meter.indeterminate ? offset : 0
+                NumberAnimation on offset {
+                    running: meter.visible && meter.indeterminate
+                    from: -fill.width; to: meter.width; duration: 1300; loops: Animation.Infinite
+                }
+            }
+        }
+    }
     component Toggle: CheckBox {
         id: check
         Layout.fillWidth: true; implicitHeight: 36; font.pixelSize: 13
@@ -169,7 +214,7 @@ ApplicationWindow {
     QtObject { id: tabs; property int currentIndex: 0; onCurrentIndexChanged: Qt.callLater(root.compactMain) }
     Rectangle {
         id: sidebar
-        width: 170; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+        width: 154; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
         color: root.surface
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.line }
         ColumnLayout {
@@ -226,16 +271,14 @@ ApplicationWindow {
         background: Rectangle { radius: 12; color: root.surface; border.color: root.line }
     }
     StackLayout {
-        anchors.left: sidebar.right; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.margins: 24
+        anchors.left: sidebar.right; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.margins: 20
         currentIndex: tabs.currentIndex
         ColumnLayout {
             id: mainColumn
-            spacing: 14
+            spacing: 12
             ColumnLayout {
                 id: primaryColumn
-                Layout.fillWidth: true; spacing: 16
-                LabelText { text: "Ekranı Türkçeye çevir"; font.pixelSize: 25; font.weight: Font.DemiBold }
-                Quiet { text: "Okumaya devam et. Çeviriyi Mergen halletsin."; Layout.bottomMargin: 8 }
+                Layout.fillWidth: true; spacing: 10
                 Panel {
                     flat: true
                     ColumnLayout {
@@ -298,45 +341,37 @@ ApplicationWindow {
                 }
             }
             Quiet { text: "Ctrl + Alt + T · Başlat / Durdur"; horizontalAlignment: Text.AlignRight }
-            ScrollView {
-                Layout.fillWidth: true; Layout.fillHeight: true
-                Layout.preferredHeight: usageContent.implicitHeight
-                visible: root.s.showUsage
-                clip: true; contentWidth: availableWidth
-                Panel {
+            Panel {
                     id: usageContent
-                    width: mainColumn.width
                     objectName: "usagePanel"
                     visible: root.s.showUsage
-                    Layout.preferredHeight: visible ? implicitHeight : 0
-                    ColumnLayout {
-                        width: parent.width; spacing: 12
-                        Quiet { text: "sistem kullanımı" }
+                    padding: 12
+                    Layout.minimumHeight: implicitHeight
+                    Layout.maximumHeight: implicitHeight
+                    RowLayout {
+                        width: parent.width; spacing: 16
                         Repeater {
                             model: ["gpu","vram","cpu"]
                             ColumnLayout {
                                 required property string modelData
-                                Layout.fillWidth: true; spacing: 5
+                                objectName: "usageMetric_" + modelData
+                                Layout.fillWidth: true; Layout.preferredWidth: 1; spacing: 8
                                 visible: modelData === "gpu" ? root.s.showGpu : modelData === "vram" ? root.s.showVram : root.s.showCpu
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Quiet { text: modelData }
-                                    Label { text: root.s.usage[modelData]; color: root.fg; font.weight: Font.DemiBold }
+                                    Quiet { text: modelData; font.pixelSize: 11 }
+                                    Label { text: root.s.usage[modelData]; color: root.fg; font.pixelSize: 12; font.weight: Font.DemiBold }
                                 }
-                                ProgressBar {
+                                ThemeProgress {
                                     Layout.fillWidth: true; from: 0; to: 100; value: parseInt(root.s.usage[modelData]) || 0
-                                    background: Rectangle { implicitHeight: 4; radius: 2; color: Qt.rgba(root.muted.r,root.muted.g,root.muted.b,.2) }
-                                    contentItem: Item { implicitHeight: 4; Rectangle { width: parent.width * parent.parent.visualPosition; height: 4; radius: 2; color: root.opposite } }
                                 }
                             }
                         }
                     }
-                }
             }
-            Item { visible: !root.s.showUsage; Layout.fillHeight: true }
+            Item { Layout.fillHeight: true; Layout.minimumHeight: 0; implicitHeight: 0 }
         }
-        ScrollView {
-            clip: true; contentWidth: availableWidth
+        ThemeScrollView {
             ColumnLayout {
                 width: parent.width; spacing: 14
                 Panel {
@@ -396,23 +431,35 @@ ApplicationWindow {
                 Action { text: "konuşma hafızasını temizle"; Layout.fillWidth: true; onClicked: controller.action("clear-context") }
             }
         }
-        ScrollView {
-            clip: true; contentWidth: availableWidth
+        ThemeScrollView {
             ColumnLayout {
                 width: parent.width; spacing: 12
                 Quiet { text: root.s.hardware }
                 Quiet { text: root.s.recommendation }
                 Action { text: "önerilen bileşenleri kur"; Layout.fillWidth: true; enabled: !root.s.busy; onClicked: controller.action("recommended") }
                 Panel {
+                    id: operationPanel
                     objectName: "operationPanel"
+                    property bool logExpanded: false
                     ColumnLayout {
                         width: parent.width; spacing: 8
                         LabelText { text: root.s.operationTitle; font.weight: Font.DemiBold }
                         Quiet { text: root.s.phase }
-                        ProgressBar { Layout.fillWidth: true; visible: root.s.busy; indeterminate: root.s.progress < 0; from: 0; to: 100; value: Math.max(0,root.s.progress); palette.highlight: root.opposite }
+                        ThemeProgress { Layout.fillWidth: true; visible: root.s.busy; indeterminate: root.s.progress < 0; from: 0; to: 100; value: Math.max(0,root.s.progress) }
                         Quiet { text: root.s.validationSummary }
                         Repeater { model: root.s.validation; delegate: Quiet { required property var modelData; text: modelData.title + " · " + modelData.message + (modelData.result ? " · " + modelData.result : "") } }
-                        TextArea { objectName: "operationLog"; Layout.fillWidth: true; Layout.preferredHeight: 130; text: root.s.log; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; color: root.fg; font.pixelSize: 11; background: Rectangle { color: root.bg; radius: 12 } onTextChanged: cursorPosition = text.length }
+                        Action { text: operationPanel.logExpanded ? "teknik günlüğü gizle" : "teknik günlüğü göster"; implicitHeight: 34; Layout.fillWidth: true; visible: root.s.log.length > 0; onClicked: operationPanel.logExpanded = !operationPanel.logExpanded }
+                        ThemeScrollView {
+                            Layout.fillWidth: true; Layout.preferredHeight: 132
+                            visible: operationPanel.logExpanded && root.s.log.length > 0
+                            TextArea {
+                                objectName: "operationLog"; text: root.s.log; readOnly: true; selectByMouse: true
+                                wrapMode: TextEdit.Wrap; color: root.muted; font.pixelSize: 11
+                                padding: 12; selectionColor: root.accent; selectedTextColor: root.buttonInk
+                                background: Rectangle { color: root.field; radius: 8; border.color: root.line }
+                                onTextChanged: cursorPosition = text.length
+                            }
+                        }
                         Action { text: "seçili ortamları doğrula"; Layout.fillWidth: true; enabled: !root.s.busy; onClicked: controller.action("validate") }
                     }
                 }
@@ -436,8 +483,7 @@ ApplicationWindow {
                 Quiet { text: "veri klasörü: " + root.s.dataPath }
             }
         }
-        ScrollView {
-            clip: true; contentWidth: availableWidth
+        ThemeScrollView {
             ColumnLayout {
                 width: parent.width; spacing: 14
                 Panel {
@@ -458,10 +504,34 @@ ApplicationWindow {
             }
         }
     }
-    footer: ColumnLayout {
-        spacing: 3
-        BusyIndicator { Layout.alignment: Qt.AlignHCenter; running: root.s.busy; visible: running; implicitWidth: 24; implicitHeight: 24 }
-        Action { text: root.s.cancelling ? "durduruluyor…" : "vazgeç"; objectName: "cancelOperation"; Layout.alignment: Qt.AlignHCenter; visible: root.s.busy; enabled: !root.s.cancelling; onClicked: controller.action("cancel") }
-        Quiet { Layout.leftMargin: sidebar.width + 24; Layout.rightMargin: 24; Layout.topMargin: 12; Layout.bottomMargin: 18; text: root.s.busy ? root.s.phase : root.s.status; maximumLineCount: 2; elide: Text.ElideRight }
+    footer: Rectangle {
+        implicitHeight: root.s.busy ? 64 : 44
+        color: root.surface
+        Rectangle { width: parent.width; height: 1; color: root.line }
+        RowLayout {
+            anchors.fill: parent; anchors.leftMargin: 20; anchors.rightMargin: 20; spacing: 12
+            Rectangle {
+                width: 6; height: 6; radius: 3; color: root.accent
+                SequentialAnimation on opacity { running: root.s.busy; loops: Animation.Infinite; NumberAnimation { to: .3; duration: 600 } NumberAnimation { to: 1; duration: 600 } }
+            }
+            Quiet {
+                id: statusLabel
+                objectName: "operationStatus"
+                text: root.s.busy ? root.s.phase : root.s.status
+                maximumLineCount: 2; elide: Text.ElideRight
+                ToolTip {
+                    visible: statusHover.hovered; delay: 500
+                    width: Math.min(root.width - 40, implicitWidth)
+                    contentItem: Text { text: statusLabel.text; wrapMode: Text.Wrap; color: root.fg; font: root.font }
+                    background: Rectangle { color: root.surface; radius: 8; border.color: root.line }
+                }
+                HoverHandler { id: statusHover }
+            }
+            Action {
+                text: root.s.cancelling ? "durduruluyor…" : "vazgeç"; objectName: "cancelOperation"
+                implicitHeight: 34; Layout.preferredWidth: root.s.cancelling ? 112 : 82
+                visible: root.s.busy; enabled: !root.s.cancelling; onClicked: controller.action("cancel")
+            }
+        }
     }
 }

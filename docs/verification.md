@@ -9,7 +9,7 @@
 - 12 örneklik gerçek cpu deneyinde qwen 0.6b belirgin anlam kazanımı sağlamadı; bir geçmişli çıktıda eski replikler yeni çeviriye karıştı. prototip normal çeviri akışına eklenmedi. bu küçük deney genel kalite oranı değildir.
 - fiziksel intel/amd/nvidia donanım testi, discord yayını ve kurulum exe’sinden tüm ocr/çeviri zinciri bu sürümün yerel doğrulama kapsamı dışındadır.
 
-## 0.3.1 yerel düzeltme paketi
+## 0.3.1
 
 - 171 otomatik test, qml açılışı ve model testi sayfa yönlendirmesi kontrolü geçti.
 - kurulum sırasında vazgeçme ve pencereyi kapatma akışı eklendi. sessiz bir alt süreç ve onun açtığı süreçle gerçek iptal denemesi geçti; iptal edilen işin başarı eylemi çalışmadı. model başlangıcındaki bekleme ve önerilen bileşenler zinciri de iptale yanıt verir.
@@ -20,4 +20,5 @@
 - tamamlanmayan model indirmeleri bileşene özel geçici klasörde korunur ve sonraki denemede aynı klasör kullanılır. model doğrulanmadan hazır işaretlenmez. indirme, diske kurulum ve nllb dönüştürmesi ayrı aşamalar olarak gösterilir.
 - ayrı gerçek indirme denemesinde yaklaşık 29 mb ocr dosyası 7,6 saniyede indirildi. önceki günlükte nllb kaynak dosyaları yaklaşık 72 saniyede alınmış; cpu paketlerinde yaklaşık 23–25 mb/sn, büyük nvidia paketinde 17 mb/sn indirme hızı kaydedilmiş. bunlar belirli bağlantıdaki ölçümlerdir; sunucunun her zaman aynı hızda çalıştığı anlamına gelmez.
 - 0.3.1 kurulum paketi derlendi, güncelleme imzası doğrulandı ve bu bilgisayardaki uygulamaya kuruldu. kurulum sırasında ayar dosyası değişmedi. kurulu exe üzerinden nvidia çevirisi “merhaba, nasılsın?” ve cpu ocr “hello world” testleri geçti; mevcut modeller yeniden indirilmedi.
-- bu paket yerel test paketidir; github release’i bu işlemde güncellenmedi. kişisel günlükler, test dosyaları ve model ağırlıkları kaynak dışa aktarımında bulunmaz.
+- 0.3.1 github’da yayımlandı. kişisel günlükler, test dosyaları ve model ağırlıkları kaynak dışa aktarımında bulunmaz.
+- aynı sürümün arayüz düzenlemesinde ana ekran sloganları kaldırıldı; pencere 660 × 502, üç sistem göstergesi açıkken 660 × 567 boyutunda kontrol edildi. göstergeler tek satırda, kaydırmasız gösterilir. durum çubuğu, ilerleme çubukları, kaydırma çubukları ve açılır teknik günlük tema renklerini kullanır. beş tema, dört sayfa, en küçük pencere boyutları ve kurulumdan vazgeçme düğmesi kontrol edildi.
