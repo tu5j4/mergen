@@ -287,9 +287,12 @@ class TranslationWorker(QObject):
         if need_hide:
             self._hide_ack.clear()
             self.hide_request.emit(True)
-            self._hide_ack.wait(0.5)
-            time.sleep(0.06)
         try:
+            if need_hide:
+                if not self._hide_ack.wait(0.5):
+                    # Never OCR our own translations if the UI did not hide in time.
+                    return None
+                time.sleep(0.06)
             return capturer.grab(x, y, w, h)
         finally:
             if need_hide:

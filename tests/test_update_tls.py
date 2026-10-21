@@ -34,3 +34,4 @@ class UpdateTlsTests(unittest.TestCase):
         context=opened.call_args.kwargs['context']
         self.assertEqual(context.verify_mode,ssl.CERT_REQUIRED)
         self.assertTrue(context.check_hostname)
+

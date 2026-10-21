@@ -1,0 +1,10 @@
+# Only the source GUI. Model frameworks are installed through the app.
+PySide6>=6.6,<7
+mss>=9,<11
+numpy>=1.26,<3
+opencv-python-headless>=4.10,<5
+Pillow>=10,<13
+psutil>=5.9,<8
+pynput>=1.7,<2
+cryptography>=42
+certifi>=2024.7.4

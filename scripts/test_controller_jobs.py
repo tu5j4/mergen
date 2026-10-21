@@ -6,9 +6,9 @@ os.environ['QT_QPA_PLATFORM']='offscreen'
 from unittest.mock import patch
 from PySide6.QtWidgets import QApplication
 from app.config import Settings
-from app.ui.controller import Controller
+from app.ui.next_controller import Controller
 app=QApplication([])
-with patch('app.ui.control_panel.start_global_hotkeys',return_value=None),patch.object(Controller,'refresh'),patch('app.ui.controller.Settings.load',return_value=Settings(check_updates=False)),patch('app.ui.controller.Settings.save'):
+with patch('app.ui.control_panel.start_global_hotkeys',return_value=None),patch.object(Controller,'refresh'),patch('app.ui.next_controller.Settings.load',return_value=Settings(check_updates=False)),patch('app.ui.next_controller.Settings.save'):
     controller=Controller()
     completed=[]
     controller.start_job(lambda emit:42,lambda value:completed.append((value,controller.job is None)))

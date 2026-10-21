@@ -96,7 +96,6 @@ class ControlPanel(QWidget):
         self.bridge.translate_now.connect(self.translate_now)
         self.hotkeys = start_global_hotkeys(self.bridge) if enable_hotkeys else None
 
-        QTimer.singleShot(0, lambda: exclude_from_capture(self))
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self) -> None:
@@ -532,7 +531,7 @@ class ControlPanel(QWidget):
         self.worker.set_region(cap, (self.region.width(), self.region.height()))
 
     def _on_hide_request(self, hidden: bool) -> None:
-        # Sadece overlay yakalamadan hariç tutulamayan sistemlerde (Linux) kullanılır
+        # Paylaşılabilir katmanı kendi OCR görüntümüzden geçici olarak çıkar.
         if hidden:
             self.overlay.hide()
             QGuiApplication.processEvents()

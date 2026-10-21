@@ -40,7 +40,11 @@ class OverlayWindow(QWidget):
     # ------------------------------------------------------------------
     def ensure_platform_setup(self) -> None:
         if not self._platform_done:
-            self._excluded = exclude_from_capture(self)
+            if self.s.share_translations:
+                exclude_from_capture(self, excluded=False)
+                self._excluded = False
+            else:
+                self._excluded = exclude_from_capture(self)
             self._platform_done = True
             print(f"[overlay] ekran yakalamadan hariç: {self._excluded}")
 

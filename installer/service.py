@@ -24,7 +24,7 @@ def python312():
             except (OSError,subprocess.SubprocessError): pass
     for path in candidates:
         if path.is_file(): return path
-    raise RuntimeError('Python 3.12 bulunamadı. Kurulum programıyla Python çalışma zamanını kurun.')
+    raise RuntimeError('python 3.12 bulunamadı. kaynak sürümde kurulum.bat dosyasını çalıştırın; kurulu uygulamada python çalışma zamanını kurulum programıyla ekleyin.')
 
 
 def model_paths(key):

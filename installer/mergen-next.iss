@@ -1,4 +1,4 @@
-#define AppVersion "0.2.0"
+#define AppVersion "0.3.0"
 [Setup]
 AppId={{956D0D15-EA99-4888-B0B3-E9A0B6813B4F}
 AppName=mergen
@@ -19,10 +19,10 @@ WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
 [Languages]
-Name: "turkish"; MessagesFile: "compiler:Languages\Turkish.isl"
+Name: "turkish"; MessagesFile: "..\build-tools\turkish-lowercase.isl"
 [Tasks]
-Name: "desktopicon"; Description: "Masaustunde kisayol olustur"; Flags: unchecked
-Name: "pythonruntime"; Description: "Bilesen indirmeleri icin uygulamaya ozel Python 3.12 kur"; Flags: checkedonce
+Name: "desktopicon"; Description: "masaüstünde kısayol oluştur"; Flags: unchecked
+Name: "pythonruntime"; Description: "bileşen indirmeleri için uygulamaya özel python 3.12 kur"; Flags: checkedonce
 [Files]
 Source: "..\dist\Mergen\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\build-tools\python\*"; DestDir: "{localappdata}\mergen-next\python"; Flags: ignoreversion recursesubdirs createallsubdirs; Tasks: pythonruntime

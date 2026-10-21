@@ -7,9 +7,9 @@ ApplicationWindow {
     id: root
     visible: true
     title: "mergen"
-    width: 540; height: 620
-    minimumWidth: 480
-    minimumHeight: tabs.currentIndex === 0 ? Math.ceil(primaryColumn.implicitHeight + root.header.implicitHeight + root.footer.implicitHeight + 48) : 480
+    width: 720; height: 740
+    minimumWidth: 680
+    minimumHeight: tabs.currentIndex === 0 ? Math.ceil(primaryColumn.implicitHeight + root.footer.implicitHeight + 64) : 560
     font.capitalization: Font.AllLowercase
     property bool usageVisible: root.s.showUsage
     function compactMain() {
@@ -22,7 +22,7 @@ ApplicationWindow {
     property var s: controller.state
     property var themes: ({
         green: ["#16201c","#202c25","#ecf2ed","#9fb1a4","#bbd9c4","#c3b5df"],
-        white: ["#f6f7f9","#ffffff","#20242c","#707783","#283347","#536cad"],
+        white: ["#f7f8fa","#ffffff","#172033","#738094","#0878ed","#0878ed"],
         navy: ["#171e2b","#202a3a","#eef1f8","#a0adc2","#a8bfe8","#d5b99b"],
         black: ["#191a1d","#232529","#f1f1f3","#a4a6af","#d9dbe2","#aabbdc"],
         sepia: ["#f2eee7","#fbf8f2","#39322a","#82796d","#705640","#596c86"]
@@ -104,7 +104,7 @@ ApplicationWindow {
             width: select.width
             height: 42
             highlighted: select.highlightedIndex === index
-            contentItem: Text {  text: String(parent.modelData); font: select.font; color: root.fg; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; leftPadding: 12; rightPadding: 12 }
+            contentItem: Text { text: String(parent.modelData).replace(/\u0130/g, "i").toLowerCase(); font: select.font; color: root.fg; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; leftPadding: 12; rightPadding: 12 }
             background: Rectangle { radius: 6; color: parent.highlighted ? root.field : root.surface }
         }
         popup: Popup {
@@ -113,7 +113,7 @@ ApplicationWindow {
             background: Rectangle { color: root.surface; radius: 10; border.color: root.line }
             contentItem: ListView { clip: true; implicitHeight: contentHeight; model: select.popup.visible ? select.delegateModel : null; currentIndex: select.highlightedIndex; ScrollIndicator.vertical: ScrollIndicator {} }
         }
-        contentItem: Text {  text: parent.displayText; font: select.font; color: root.fg; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; leftPadding: 12; rightPadding: 24 }
+        contentItem: Text { text: String(select.displayText).replace(/\u0130/g, "i").toLowerCase(); font: select.font; color: root.fg; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; leftPadding: 12; rightPadding: 24 }
     }
     component Panel: Frame {
         property bool flat: false
@@ -129,17 +129,16 @@ ApplicationWindow {
         id: check
         Layout.fillWidth: true; implicitHeight: 36; font.pixelSize: 13
         indicator: Rectangle {
-            x: 0; y: (check.height-height)/2; width: 18; height: 18; radius: 5
-            color: check.checked ? root.opposite : root.bg
-            border.color: check.activeFocus ? root.fg : root.opposite
-            border.width: check.activeFocus ? 2 : 1
-            Item {
-                anchors.centerIn: parent; width: 14; height: 12; visible: check.checked
-                Rectangle { x: 1; y: 5; width: 6; height: 2; radius: 1; color: root.bg; rotation: 45; transformOrigin: Item.Left; antialiasing: true }
-                Rectangle { x: 5; y: 9; width: 10; height: 2; radius: 1; color: root.bg; rotation: -50; transformOrigin: Item.Left; antialiasing: true }
+            x: check.width-width; y: (check.height-height)/2; width: 40; height: 22; radius: 11
+            color: check.checked ? root.accent : root.field
+            border.color: check.activeFocus ? root.accent : root.line
+            Rectangle {
+                x: check.checked ? 21 : 3; y: 3; width: 16; height: 16; radius: 8
+                color: check.checked ? root.buttonInk : root.muted
+                Behavior on x { NumberAnimation { duration: 120 } }
             }
         }
-        contentItem: Text {  text: check.text; font: check.font; color: root.fg; leftPadding: 30; verticalAlignment: Text.AlignVCenter; wrapMode: Text.WordWrap }
+        contentItem: Text { text: check.text; font: check.font; color: root.fg; rightPadding: 54; verticalAlignment: Text.AlignVCenter; wrapMode: Text.WordWrap }
     }
     component ThemeSlider: Slider {
         id: slider
@@ -166,31 +165,46 @@ ApplicationWindow {
         up.indicator: Rectangle { x: parent.width-width; height: parent.height; width: 34; radius: 12; color: numberSelect.up.pressed ? root.surface : "transparent"; Text { anchors.centerIn: parent; text: "+"; color: root.fg; font.pixelSize: 19 } }
     }
 
-    header: ColumnLayout {
-        spacing: 0
-        Layout.topMargin: 14
-        TabBar {
-            id: tabs
-            onCurrentIndexChanged: Qt.callLater(root.compactMain)
-            Layout.topMargin: 14
-            Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24
-            implicitHeight: 46; spacing: 6
-            background: Rectangle { color: "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: root.line } }
+    // Keep controller page indices stable: translation, settings, models, updates.
+    QtObject { id: tabs; property int currentIndex: 0; onCurrentIndexChanged: Qt.callLater(root.compactMain) }
+    Rectangle {
+        id: sidebar
+        width: 170; anchors.left: parent.left; anchors.top: parent.top; anchors.bottom: parent.bottom
+        color: root.surface
+        Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: root.line }
+        ColumnLayout {
+            anchors.fill: parent; anchors.margins: 16; spacing: 8
+            RowLayout {
+                Layout.topMargin: 12; Layout.bottomMargin: 28; spacing: 10
+                Image { source: "../../../assets/mergen-logo.png"; fillMode: Image.PreserveAspectFit; Layout.preferredWidth: 25; Layout.preferredHeight: 25 }
+                Label { text: "mergen"; color: root.fg; font.pixelSize: 24; font.weight: Font.DemiBold }
+            }
             Repeater {
-                model: ["çeviri", "ayarlar", "bileşenler", "güncelleme"]
-                TabButton {
-                    id: tabButton
-                    implicitHeight: 46
-                    required property string modelData
-                    text: modelData; font.pixelSize: 12
-                    contentItem: Text { font.family: root.font.family; font.capitalization: Font.AllLowercase; font.weight: tabButton.checked ? Font.DemiBold : Font.Normal; text: parent.text; color: parent.checked ? root.fg : root.muted; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                model: [{label:"Çeviri",icon:"region",page:0},{label:"Modeller",icon:"puzzle",page:2},{label:"Ayarlar",icon:"settings",page:1},{label:"Güncellemeler",icon:"refresh",page:3}]
+                Button {
+                    id: nav
+                    required property var modelData
+                    Layout.fillWidth: true; implicitHeight: 46
+                    checked: tabs.currentIndex === modelData.page
+                    onClicked: tabs.currentIndex = modelData.page
+                    Accessible.name: modelData.label
+                    contentItem: RowLayout {
+                        spacing: 10
+                        Glyph { name: nav.modelData.icon; ink: nav.checked ? root.accent : root.muted; Layout.preferredWidth: 19; Layout.preferredHeight: 19 }
+                        Label { text: nav.modelData.label; color: nav.checked ? root.accent : root.fg; font.pixelSize: 13; Layout.fillWidth: true }
+                    }
                     background: Rectangle {
-                        radius: 6; color: tabButton.hovered ? root.field : "transparent"
-                        Rectangle { anchors.bottom: parent.bottom; anchors.horizontalCenter: parent.horizontalCenter; width: parent.width-28; height: 2; radius: 1; color: root.accent; visible: tabButton.checked }
-                        border.color: tabButton.activeFocus ? root.accent : "transparent"
+                        radius: 8
+                        color: nav.checked ? Qt.rgba(root.accent.r,root.accent.g,root.accent.b,.10) : nav.hovered ? root.field : "transparent"
+                        border.color: nav.activeFocus ? root.accent : "transparent"
+                        Behavior on color { ColorAnimation { duration: 140 } }
                     }
                 }
             }
+            Item { Layout.fillHeight: true }
+            Quiet { text: "●  Yerel çalışma"; font.pixelSize: 12 }
+            Action { text: root.lightTheme ? "Koyu görünüm" : "Açık görünüm"; Layout.fillWidth: true; onClicked: controller.setting("panel_theme",root.lightTheme ? "black" : "white") }
+            Quiet { text: "mergen · " + root.s.version; font.pixelSize: 11; Layout.topMargin: 6 }
         }
     }
     Connections {
@@ -212,36 +226,43 @@ ApplicationWindow {
         background: Rectangle { radius: 12; color: root.surface; border.color: root.line }
     }
     StackLayout {
-        anchors.fill: parent; anchors.margins: 24
+        anchors.left: sidebar.right; anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.margins: 24
         currentIndex: tabs.currentIndex
         ColumnLayout {
             id: mainColumn
             spacing: 14
             ColumnLayout {
                 id: primaryColumn
-                Layout.fillWidth: true; spacing: 18
+                Layout.fillWidth: true; spacing: 16
+                LabelText { text: "Ekranı Türkçeye çevir"; font.pixelSize: 25; font.weight: Font.DemiBold }
+                Quiet { text: "Okumaya devam et. Çeviriyi Mergen halletsin."; Layout.bottomMargin: 8 }
                 Panel {
                     flat: true
                     ColumnLayout {
                         width: parent.width; spacing: 10
-                        Quiet { text: "okuduğun içeriğin dili"; font.pixelSize: 13 }
+                        Quiet { text: "Kaynak dil"; font.pixelSize: 13 }
                         Select {
                             objectName: "languageSelect"
-                            model: ["japonca · manga", "korece · manhwa / webtoon", "çince basit · manhua", "çince geleneksel · manhua", "ingilizce · çizgi roman / scan"]
+                            model: ["Japonca · Manga", "Korece · Manhwa / Webtoon", "Çince Basit · Manhua", "Çince Geleneksel · Manhua", "İngilizce · Çizgi roman"]
                             currentIndex: ["ja","ko","zh","zh_tw","en"].indexOf(root.s.language)
                             onActivated: controller.setting("source_lang", ["ja","ko","zh","zh_tw","en"][currentIndex])
                         }
                     }
                 }
                 RowLayout {
+                    Quiet { text: "Hedef dil" }
+                    Label { text: "Türkçe"; color: root.fg; font.weight: Font.DemiBold }
+                }
+                Quiet { text: "Çeviri alanı" }
+                RowLayout {
                     Layout.fillWidth: true; spacing: 8
-                    Action { text: "bölge seç"; iconName: "region"; Layout.fillWidth: true; onClicked: controller.action("region") }
-                    Action { text: "tüm ekran"; iconName: "full"; Layout.fillWidth: true; onClicked: controller.action("full") }
+                    Action { text: "Bölge seç"; iconName: "region"; Layout.fillWidth: true; onClicked: controller.action("region") }
+                    Action { text: "Tüm ekran"; iconName: "full"; Layout.fillWidth: true; onClicked: controller.action("full") }
                 }
                 RowLayout {
                     Layout.fillWidth: true; spacing: 8
-                    Action { text: "şimdi çevir"; iconName: "refresh"; Layout.fillWidth: true; onClicked: controller.action("once") }
-                    Action { text: "çeviriyi gizle/göster"; iconName: "eye"; Layout.fillWidth: true; onClicked: controller.action("overlay") }
+                    Action { text: "Şimdi çevir"; iconName: "refresh"; Layout.fillWidth: true; onClicked: controller.action("once") }
+                    Action { text: "Gizle / Göster"; iconName: "eye"; Layout.fillWidth: true; onClicked: controller.action("overlay") }
                     Action {
                         Layout.preferredWidth: 46
                         iconName: "settings"
@@ -249,10 +270,15 @@ ApplicationWindow {
                         onClicked: tabs.currentIndex = 1
                     }
                 }
+                Toggle { text: "Kaydırmayı takip et"; checked: root.s.scrollTracking; onClicked: controller.setting("scroll_tracking",checked) }
+                RowLayout {
+                    Quiet { text: root.s.model === "600m" ? "NLLB 600M · Standart" : "NLLB 1.3B · Kaliteli" }
+                    Label { text: ({cpu:"CPU",nvidia:"NVIDIA CUDA",amd:"AMD ROCm",intel:"Intel XPU"})[root.s.translationBackend] || "CPU"; color: root.muted; font.pixelSize: 12 }
+                }
                 Button {
                     id: startButton
                     objectName: "startButton"
-                    text: root.s.running ? "çeviriyi durdur" : "çeviriyi başlat"
+                    text: root.s.running ? "Çeviriyi durdur" : "Çeviriyi başlat"
                     Layout.fillWidth: true; implicitHeight: 58
                     opacity: enabled ? 1 : .55
                     contentItem: RowLayout {
@@ -271,6 +297,7 @@ ApplicationWindow {
                     onClicked: controller.action("start")
                 }
             }
+            Quiet { text: "Ctrl + Alt + T · Başlat / Durdur"; horizontalAlignment: Text.AlignRight }
             ScrollView {
                 Layout.fillWidth: true; Layout.fillHeight: true
                 Layout.preferredHeight: usageContent.implicitHeight
@@ -351,6 +378,8 @@ ApplicationWindow {
                         width: parent.width
                         LabelText { text: "okuma"; font.pixelSize: 18 }
                         Toggle { text: "kaydırmayı takip et"; checked: root.s.scrollTracking; onClicked: controller.setting("scroll_tracking",checked) }
+                        Toggle { objectName: "shareTranslationsToggle"; text: "Çevirileri ekran paylaşımında göster"; checked: root.s.shareTranslations; onClicked: controller.setting("share_translations",checked) }
+                        Quiet { text: "Tüm ekran paylaşımında çeviri katmanı görünür. Ekran okunurken kısa süre gizlenebilir. Bu ayarı değiştirmek için çeviriyi durdur." }
                         Toggle { text: "çinceyi ingilizce üzerinden çevir"; checked: root.s.chinesePivot; onClicked: controller.setting("chinese_translation_via_english",checked) }
                     }
                 }
@@ -430,6 +459,6 @@ ApplicationWindow {
     footer: ColumnLayout {
         spacing: 3
         BusyIndicator { Layout.alignment: Qt.AlignHCenter; running: root.s.busy; visible: running; implicitWidth: 24; implicitHeight: 24 }
-        Quiet { Layout.leftMargin: 24; Layout.rightMargin: 24; Layout.topMargin: 12; Layout.bottomMargin: 18; text: root.s.busy ? root.s.phase : root.s.status; maximumLineCount: 2; elide: Text.ElideRight }
+        Quiet { Layout.leftMargin: sidebar.width + 24; Layout.rightMargin: 24; Layout.topMargin: 12; Layout.bottomMargin: 18; text: root.s.busy ? root.s.phase : root.s.status; maximumLineCount: 2; elide: Text.ElideRight }
     }
 }

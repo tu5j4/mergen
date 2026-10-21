@@ -1,29 +1,19 @@
-# mergen 0.2.0 kurulumu
+﻿# mergen kurulumu
 
-1. [kurulum exe dosyasını indir](https://github.com/tu5j4/mergen/releases/download/v0.2.0/mergen-setup-0.2.0.exe) ve çalıştır.
-2. bileşen indirmeleri için uygulamaya özel python seçeneğini açık bırak. istersen masaüstü kısayolunu seç.
-3. uygulamanın bileşenler bölümünde önerilen bileşenleri kur. indirme, kurulum ve model testi sonuçları aynı ekranda görünür.
-4. dili ve ekran bölgesini seçip çeviriyi başlat.
+## kurulum exe’si
 
-windows 10 2004 veya üzeri / windows 11 x64, avx destekli işlemci, internet ve birkaç gb boş alan gerekir. exe arayüzü ve python 3.12 çalışma zamanını içerir; model kütüphaneleri ve ağırlıkları ayrıca indirilir.
+ana readme’deki güncel kurulum exe’sini çalıştır. uygulama kullanıcı hesabına kurulur; yönetici yetkisi ve sistem python kurulumu gerekmez. uygulamaya özel python 3.12 seçeneği bileşen indirmeleri için açık bırakılmalıdır.
 
-## çalışma ortamları
+uygulamayı açıp `modeller` sayfasından cihaz ortamını, ocr ve çeviri modelini seç. ilk indirme internet bağlantısı ve birkaç gb boş alan gerektirir. modeller hazır olduğunda çeviri yerel çalışır. intel, amd ve nvidia seçenekleri cihaz uyumluluğuna göre değişir.
 
-| ortam | kullanım |
-|---|---|
-| cpu | ekran kartından bağımsız çeviri ve ocr |
-| nvidia cuda | uygun kart ve sürücüyle çeviri, manga-ocr; paddleocr ayrı ortamda |
-| amd rocm | desteklenen radeon kartlarında deneysel, windows 11 gerekir |
-| intel xpu | desteklenen intel kartlarında deneysel, windows 11 gerekir |
+0.2.0’dan 0.3.0’a geçişte güncelleme anahtarı yenilendiğinden kurulum exe’sini elle çalıştır. eski sürümün imza kontrolü atlanmaz.
 
-uygunluk kontrolü tek başına yeterli değildir; çalışma ortamı ve seçili modeller gerçek işlemle doğrulanır. hata durumunda cpu seçeneği kullanılabilir. ekran kartı sürücüleri uygulama tarafından değiştirilmez.
+## kaynak koddan
 
-## bileşenler ve veriler
+1. `kurulum.bat` uygulamaya özel python’u `.data/python`, arayüz ortamını `.venv` altında kurar.
+2. `baslat.bat` arayüzü açar.
+3. modeller ve cihaz kütüphaneleri uygulamadan indirilir.
 
-model ve ortamları bileşenler bölümünden kurabilir, onarabilir veya kaldırabilirsin. ayarlardaki seçili ortamları doğrula düğmesi gerçek çeviri ve ocr testi yapar. gerekli modeller indirildikten sonra çeviri internet olmadan çalışır.
+kurulum günlüğü `.data/logs/source-setup.log` dosyasındadır. `kurulum.bat -Plan` yalnız kurulacak yolları gösterir. sistem python’u, path ve ekran kartı sürücüleri değiştirilmez.
 
-ayarlar, modeller ve günlükler uygulama dosyalarından ayrı tutulur. önceki geliştirme sürümlerindeki verileri korumak için veri klasörünün adı `%localappdata%/mergen-next` olarak bırakılmıştır; uygulamanın adı mergen'dir. uygulamayı kaldırmak bu verileri silmez; modelleri bileşenler ekranından kaldırabilirsin.
-
-güncellemeler bölümünde github sürümleri kontrol edilir. kurulum kullanıcı onayıyla yapılır; indirilen paketin imzası ve dosya özeti doğrulanır.
-
-uygulama kodu mit lisanslıdır; nllb modelleri ticari olmayan kullanım içindir. [üçüncü taraf lisansları](../THIRD_PARTY_NOTICES.md).
+kaynak sürümde veriler `.data`, kurulu uygulamada `%LOCALAPPDATA%/mergen-next` altında tutulur. exe güncellemesi ayar ve modelleri dağıtım paketinden kopyalamaz. uygulamayı kaldırmak modelleri silmez; modelleri uygulamadaki bileşen yönetiminden kaldırabilirsin.

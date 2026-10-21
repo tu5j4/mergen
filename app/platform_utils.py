@@ -16,7 +16,7 @@ from PySide6.QtGui import QGuiApplication
 WDA_EXCLUDEFROMCAPTURE = 0x00000011
 
 
-def exclude_from_capture(widget) -> bool:
+def exclude_from_capture(widget, excluded: bool = True) -> bool:
     try:
         wid = int(widget.winId())
     except Exception:
@@ -28,7 +28,7 @@ def exclude_from_capture(widget) -> bool:
             user32 = ctypes.windll.user32
             user32.SetWindowDisplayAffinity.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
             user32.SetWindowDisplayAffinity.restype = ctypes.c_bool
-            return bool(user32.SetWindowDisplayAffinity(ctypes.c_void_p(wid), WDA_EXCLUDEFROMCAPTURE))
+            return bool(user32.SetWindowDisplayAffinity(ctypes.c_void_p(wid), WDA_EXCLUDEFROMCAPTURE if excluded else 0))
         except Exception as e:
             print(f"[platform] SetWindowDisplayAffinity başarısız: {e}")
             return False
@@ -40,7 +40,7 @@ def exclude_from_capture(widget) -> bool:
             window = view.window()
             if window is None:
                 return False
-            window.setSharingType_(0)  # NSWindowSharingNone
+            window.setSharingType_(0 if excluded else 1)
             return True
         except Exception as e:
             print(f"[platform] macOS sharingType ayarlanamadı: {e}")

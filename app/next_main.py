@@ -22,7 +22,7 @@ def main():
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('mergen.desktop')
     prepare_data()
-    from app.ui.controller import Controller
+    from app.ui.next_controller import Controller
     if smoke:
         from unittest.mock import patch
         with patch.object(Controller,'refresh'),patch('app.ui.control_panel.start_global_hotkeys',return_value=None):controller=Controller()
@@ -32,8 +32,6 @@ def main():
     engine.rootContext().setContextProperty('controller',controller)
     engine.load(QUrl.fromLocalFile(str(APP_ROOT/'app/ui/qml/Main.qml')))
     if not engine.rootObjects(): return 1
-    from app.platform_utils import exclude_from_capture
-    QTimer.singleShot(0,lambda:exclude_from_capture(engine.rootObjects()[0]))
     app.aboutToQuit.connect(controller.monitor.close)
     if smoke:
         def finish():
@@ -43,16 +41,7 @@ def main():
             (DATA_ROOT/'smoke-result.json').write_text(json.dumps({'qml':True,'version':controller.state['version'],
                 'model_frameworks_loaded':[n for n in ('torch','paddle','transformers','ctranslate2') if n in sys.modules]}))
             controller.monitor.close();app.quit()
-        if '--update-test' in sys.argv:
-            def check_update():
-                import json
-                from app import updates
-                try:result=dict(ok=True,result=updates.check())
-                except Exception as exc:result=dict(ok=False,error=str(exc))
-                (DATA_ROOT/'update-test-result.json').write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
-                finish()
-            QTimer.singleShot(1000,check_update)
-        elif '--runtime-test' in sys.argv:
+        if '--runtime-test' in sys.argv:
             from dataclasses import replace
             from installer import service
             settings=replace(controller.settings,translation_backend='cpu',ocr_backend='cpu',manga_backend='cpu',source_lang='ja',use_manga_ocr=True)

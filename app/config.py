@@ -97,6 +97,7 @@ class Settings:
     min_font_px: int = 9
     box_padding: int = 4
     overlay_visible: bool = True
+    share_translations: bool = True
     theme: str = "navy"
     panel_theme: str = "white"
     translation_backend: str = "local"

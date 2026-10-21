@@ -19,7 +19,7 @@ except ImportError:
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
-class RuntimeTests(unittest.TestCase):
+class NextTests(unittest.TestCase):
     def test_frozen_cpu_install_supplies_openmp_before_validation(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);bundle=root/'bundle';bundle.mkdir()

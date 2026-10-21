@@ -66,6 +66,7 @@ class Controller(QObject):
             overlayTheme=self.settings.theme,fontFamily=self.settings.font_family,maxFont=self.settings.max_font_px,
             bold=self.settings.font_bold,preset=self.settings.speed_preset,scrollTracking=self.settings.scroll_tracking,
             contextEnabled=self.settings.session_context,chinesePivot=self.settings.chinese_translation_via_english,
+            shareTranslations=self.settings.share_translations,
             checkUpdates=self.settings.check_updates,showGpu=self.settings.show_gpu_usage,
             showVram=self.settings.show_vram_usage,showCpu=self.settings.show_cpu_usage,
             showUsage=any((self.settings.show_gpu_usage,self.settings.show_vram_usage,self.settings.show_cpu_usage)))
@@ -184,7 +185,7 @@ class Controller(QObject):
                  'translation_model':('nllb-200-distilled-600M-ct2','nllb-200-distilled-1.3B-ct2'),
                  'theme':('white','black','sepia','navy','gray'), 'font_family':('Segoe UI','Comic Sans MS','Arial'),
                  'speed_preset':('fast','balanced','quality')}
-        booleans=('use_manga_ocr','check_updates','show_gpu_usage','show_vram_usage','show_cpu_usage','show_system_usage','font_bold','scroll_tracking','session_context','chinese_translation_via_english')
+        booleans=('use_manga_ocr','check_updates','show_gpu_usage','show_vram_usage','show_cpu_usage','show_system_usage','font_bold','scroll_tracking','session_context','chinese_translation_via_english','share_translations')
         if key in choices and value not in choices[key]:return
         if key in booleans:value=bool(value)
         elif key=='overlay_opacity':value=max(.3,min(1.,float(value)))
