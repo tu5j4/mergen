@@ -8,7 +8,7 @@ COMPONENTS={
  'amd': {'title':'AMD ROCm çalışma ortamı','kind':'environment','backend':'amd','detail':'Deneysel · Windows 11, Python 3.12 ve desteklenen Radeon sürücüsü gerekir.'},
  'intel': {'title':'Intel XPU çalışma ortamı','kind':'environment','backend':'intel','detail':'Deneysel · Windows 11, desteklenen Arc/Core Ultra GPU ve sürücü gerekir.'},
  '600m': {'title':'nllb 600m · standart','kind':'translation','bundled':True,'folder':'nllb-200-distilled-600M','detail':'kurulum paketinde · mevcut standart model · cpu int8 ve nvidia desteği.'},
- '1300m': {'title':'nllb 1.3b · mergen bağlam v3','kind':'translation','bundled':True,'context':True,'folder':'nllb-1.3b-baglam-v3','detail':'kurulum paketinde · geliştirdiğimiz lora ve son üç replikle bağlam · uyarlama eğitimi ingilizce–türkçe için yapıldı.'},
+ '1300m': {'title':'nllb 1.3b · mergen bağlam v1','kind':'translation','bundled':True,'context':True,'folder':'nllb-1.3b-baglam-v3','detail':'kurulum paketinde · geliştirdiğimiz lora ve son üç replikle bağlam · uyarlama eğitimi ingilizce–türkçe için yapıldı.'},
  'ocr-paddle': {'title':'PaddleOCR mobil modelleri','kind':'ocr','family':'paddle','names':list(OCR_NAMES.values())[:3],'detail':'CPU / NVIDIA için tespit, tanıma ve yön modelleri.'},
  'ocr-torch': {'title':'PaddleOCR Transformers modelleri','kind':'ocr','family':'transformers','names':list(OCR_NAMES.values())[:3],'detail':'AMD / Intel için deneysel OCR yolu.'},
  'korean-paddle': {'title':'Korece · Paddle modeli','kind':'ocr','family':'paddle','names':[OCR_NAMES['korean']],'detail':'CPU / NVIDIA için Korece tanıma modeli.'},

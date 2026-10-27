@@ -1,6 +1,6 @@
 # mergen 0.4.0 kurulumu
 
-releases bölümündeki `mergen-setup-0.4.0.exe` dosyasını çalıştır. başlatıcı, bu sürüme sabitlenmiş yaklaşık 4,16 gb kurulum verisini github'dan indirir; her parçanın ve birleştirilen kurulumun sha256 özetini doğruladıktan sonra kurulumu açar. parçaları elle aynı klasöre koyman gerekmez. github dosya başına 2 gib sınırı nedeniyle büyük paket iki `.data` dosyası olarak yayımlanır. ilk kurulum internet gerektirir.
+releases bölümündeki `mergen-setup-0.4.0.exe` dosyasını çalıştır. başlatıcı, bu sürüme sabitlenmiş yaklaşık 4,16 gb kurulum verisini github'dan indirir; her parçanın ve birleştirilen kurulumun sha256 özetini doğruladıktan sonra kurulumu açar. parçaları elle aynı klasöre koyman gerekmez. github dosya başına 2 gib sınırı nedeniyle büyük paket 400 mib boyutuna kadar `.data` parçaları olarak yayımlanır. ilk kurulum internet gerektirir.
 
 kurulum standart 600m, bağlamlı 1.3b ve ocr modellerini içerir. modeller kayıpsız arşivlerinden özgün sha256 özetleriyle açılır. python 3.12 uygulamaya özel kurulur; sistem python'u veya ekran kartı sürücüsü değiştirilmez. modeller açıldığında yaklaşık 6,5 gb kaplar. indirme, birleştirme, model açma ve çalışma kütüphaneleri için ayrıca boş alan gerekir.
 

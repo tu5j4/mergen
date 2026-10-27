@@ -328,7 +328,7 @@ ApplicationWindow {
                 }
                 Toggle { text: "Kaydırmayı takip et"; checked: root.s.scrollTracking; onClicked: controller.setting("scroll_tracking",checked) }
                 RowLayout {
-                    Quiet { text: root.s.model === "600m" ? "nllb 600m · standart" : "nllb 1.3b · mergen bağlam v3" }
+                    Quiet { text: root.s.model === "600m" ? "nllb 600m · standart" : "nllb 1.3b · mergen bağlam v1" }
                     Label { text: ({cpu:"CPU",nvidia:"NVIDIA CUDA",amd:"AMD ROCm",intel:"Intel XPU"})[root.s.translationBackend] || "CPU"; color: root.muted; font.pixelSize: 12 }
                 }
                 Button {
@@ -415,7 +415,7 @@ ApplicationWindow {
                         Quiet { text: "manga-ocr çalışma ortamı"; visible: root.s.mangaEnabled }
                         Select { visible: root.s.mangaEnabled; model: ["cpu","nvidia cuda","amd rocm · deneysel","intel xpu · deneysel"]; currentIndex: ["cpu","nvidia","amd","intel"].indexOf(root.s.mangaBackend); onActivated: controller.setting("manga_backend",["cpu","nvidia","amd","intel"][currentIndex]) }
                         Quiet { text: "çeviri modeli" }
-                        Select { model: ["nllb 600m · standart","nllb 1.3b · mergen bağlam v3"]; currentIndex: root.s.model === "600m" ? 0 : 1; onActivated: controller.setting("translation_model",currentIndex === 0 ? "nllb-200-distilled-600M-ct2" : "nllb-1.3b-baglam-v3") }
+                        Select { model: ["nllb 600m · standart","nllb 1.3b · mergen bağlam v1"]; currentIndex: root.s.model === "600m" ? 0 : 1; onActivated: controller.setting("translation_model",currentIndex === 0 ? "nllb-200-distilled-600M-ct2" : "nllb-1.3b-baglam-v3") }
                         Toggle { text: "oturum bağlamını kullan"; checked: root.s.contextEnabled; onClicked: controller.setting("session_context",checked) }
                         Quiet { visible: root.s.model === "1300m"; text: "bağlam açıkken son üç replik kullanılır. bu sürümün uyarlama eğitimi ingilizce–türkçe için yapıldı." }
                         Action { text: "seçili ortamları doğrula"; Layout.fillWidth: true; enabled: root.s.operationAvailable; onClicked: controller.action("validate") }

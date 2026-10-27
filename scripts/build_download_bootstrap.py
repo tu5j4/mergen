@@ -14,10 +14,12 @@ from app.storage import VERSION,REPOSITORY
 def digest(path):
     with path.open('rb') as stream:return hashlib.file_digest(stream,'sha256').hexdigest()
 
-def build(installer,output):
+def build(installer,output,chunk_mib=400):
     installer=Path(installer).resolve();output=Path(output).resolve()
     if not installer.is_file() or installer.parent==output:raise ValueError('use a separate release output')
     output.mkdir(parents=True,exist_ok=True)
+    if not 1<=chunk_mib<=2000:raise ValueError('chunk size must be between 1 and 2000 MiB')
+    limit=chunk_mib*1024*1024
     parts=[]
     with installer.open('rb') as source:
         index=0
@@ -29,8 +31,8 @@ def build(installer,output):
             with target.open('wb') as stream:
                 while block:
                     stream.write(block);hashed.update(block);size+=len(block)
-                    if size>=2000*1024*1024:break
-                    block=source.read(min(1024*1024,2000*1024*1024-size))
+                    if size>=limit:break
+                    block=source.read(min(1024*1024,limit-size))
             parts.append(dict(name=target.name,url=f'https://github.com/{REPOSITORY}/releases/download/v{VERSION}/{target.name}',bytes=size,sha256=hashed.hexdigest()))
     manifest=dict(version=VERSION,sha256=digest(installer),bytes=installer.stat().st_size,parts=parts)
     metadata=output/'mergen-package.json'
@@ -43,5 +45,5 @@ def build(installer,output):
     return manifest
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--installer',type=Path,required=True);p.add_argument('--output',type=Path,required=True)
-    a=p.parse_args();print(json.dumps(build(a.installer,a.output),indent=2))
+    p=argparse.ArgumentParser();p.add_argument('--installer',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--chunk-mib',type=int,default=400)
+    a=p.parse_args();print(json.dumps(build(a.installer,a.output,a.chunk_mib),indent=2))
