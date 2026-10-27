@@ -41,10 +41,11 @@ class Controller(QObject):
         super().__init__()
         prepare_data()
         self.settings=Settings.load()
+        self._automatic_start_requested='--configure-hardware' in sys.argv
         for name in ('translation_backend','ocr_backend','manga_backend'):
             if getattr(self.settings,name)=='local': setattr(self.settings,name,'cpu')
         self.settings.save()
-        self.backend=None;self.job=None;self._pending=None;self._stopping=False
+        self.backend=None;self.job=None;self._job_read_only=False;self._pending=None;self._stopping=False
         self._exit_action=None
         self._state={'version':VERSION,'status':'Okumaya hazır.','running':False,'busy':False,'log':'',
                      'components':[],'hardware':'Donanım bilgileri alınıyor…','updates':'Henüz kontrol edilmedi.',
@@ -72,10 +73,12 @@ class Controller(QObject):
     @Property('QVariantMap',notify=changed)
     def state(self):
         return dict(self._state,cancelling=bool(self.job and self.job.cancel_requested.is_set()),
+            languageSelectable=not self._stopping and not self._state['busy'],
+            operationAvailable=self.job is None and not self._stopping,
             canUninstall=self.uninstaller_path().is_file() and bool(getattr(sys,'frozen',False)),
             theme=self.settings.panel_theme,language=self.settings.source_lang,
             translationBackend=self.settings.translation_backend,ocrBackend=self.settings.ocr_backend,
-            mangaBackend=self.settings.manga_backend,model='1300m' if '1.3B' in self.settings.translation_model else '600m',
+            mangaBackend=self.settings.manga_backend,model='1300m' if self.settings.translation_model=='nllb-1.3b-baglam-v3' or '1.3B' in self.settings.translation_model else '600m',
             opacity=self.settings.overlay_opacity,mangaEnabled=self.settings.use_manga_ocr,
             overlayTheme=self.settings.theme,fontFamily=self.settings.font_family,maxFont=self.settings.max_font_px,
             bold=self.settings.font_bold,preset=self.settings.speed_preset,scrollTracking=self.settings.scroll_tracking,
@@ -152,9 +155,10 @@ class Controller(QObject):
         self.status(self._state['validationSummary'])
 
 
-    def start_job(self,fn,done=None):
+    def start_job(self,fn,done=None,read_only=False):
         if self.job is not None or self._stopping: self.status('Devam eden işlemin tamamlanmasını bekleyin.');return
-        self._state['busy']=True;self.changed.emit()
+        self._job_read_only=read_only
+        self._state['busy']=not read_only;self.changed.emit()
         self.job=Job(fn,self)
         self.job.progress.connect(self.append)
         self.job.failed.connect(self.job_error)
@@ -168,7 +172,7 @@ class Controller(QObject):
     def job_finished(self):
         job,self.job=self.job,None
         cancelled=job.cancel_requested.is_set()
-        job.deleteLater();self._state['busy']=False;self.changed.emit()
+        job.deleteLater();self._job_read_only=False;self._state['busy']=False;self.changed.emit()
         done=self._job_done
         if cancelled:self.job_cancelled()
         if self._job_ok and not cancelled and not self._exit_action and done:
@@ -185,7 +189,7 @@ class Controller(QObject):
         self.scan_components()
         if self._state['hardware'].startswith('Donanım'):
             from installer.hardware import detect
-            self.start_job(lambda emit:detect(),self.hardware_ready)
+            self.start_job(lambda emit:detect(),self.hardware_ready,read_only=True)
         self.changed.emit()
     def hardware_ready(self,data):
         adapters=data.get('adapters',[])
@@ -194,6 +198,17 @@ class Controller(QObject):
         self._profile=recommended(data)
         self._state['recommendation']=self._profile['message']
         self.changed.emit()
+        if self._automatic_start_requested:
+            self._automatic_start_requested=False
+            QTimer.singleShot(0,lambda:self.action('automatic-setup'))
+
+    def automatic_setup_done(self,report):
+        if report['ok']:
+            for key,value in report['selected_settings'].items():setattr(self.settings,key,value)
+            self.settings.save()
+        self.validation_done(report)
+        if report['ok'] and report.get('fallback_reason'):
+            self.status('ekran kartı yolu tamamlanamadı · cpu model testleri geçti, çeviri hazır.')
 
     def ensure_backend(self):
         if self.backend is not None:return self.backend
@@ -234,7 +249,7 @@ class Controller(QObject):
         choices={'panel_theme':('green','white','navy','black','sepia'),
                  'source_lang':tuple(LANGS),'translation_backend':('cpu','nvidia','amd','intel'),
                  'ocr_backend':('cpu','nvidia','amd','intel'),'manga_backend':('cpu','nvidia','amd','intel'),
-                 'translation_model':('nllb-200-distilled-600M-ct2','nllb-200-distilled-1.3B-ct2'),
+                 'translation_model':('nllb-200-distilled-600M-ct2','nllb-1.3b-baglam-v3'),
                  'theme':('white','black','sepia','navy','gray'), 'font_family':('Segoe UI','Comic Sans MS','Arial'),
                  'speed_preset':('fast','balanced','quality')}
         booleans=('use_manga_ocr','check_updates','show_gpu_usage','show_vram_usage','show_cpu_usage','show_system_usage','font_bold','scroll_tracking','session_context','chinese_translation_via_english','share_translations')
@@ -244,7 +259,18 @@ class Controller(QObject):
         elif key=='max_font_px':value=max(10,min(96,int(value)))
         elif key not in choices:return
         visual=key in ('panel_theme','overlay_opacity','font_family','max_font_px','font_bold','show_gpu_usage','show_vram_usage','show_cpu_usage')
-        if (self.job or self._stopping) and not visual:self.status('İşlem tamamlandıktan sonra ayarı değiştirebilirsiniz.');return
+        if ((self.job and not self._job_read_only) or self._stopping) and not visual:self.status('İşlem tamamlandıktan sonra ayarı değiştirebilirsiniz.');return
+        if key=='source_lang':
+            # The worker switches OCR on its own thread. Keep the translator,
+            # reading region and active session alive while the menu updates.
+            self.settings.source_lang=value
+            if self.backend:
+                index=self.backend.cb_lang.findData(value)
+                self.backend.cb_lang.setCurrentIndex(index)
+                self.settings.use_manga_ocr=self.backend.s.use_manga_ocr
+            self.settings.save();self.changed.emit()
+            self.status('kaynak dil değiştirildi · '+LANGS[value]['name'])
+            return
         if self._state['running'] and not visual:self.status('Bu ayarı değiştirmeden önce çeviriyi durdurun.');return
         if self.backend and not visual:
             self.release_backend(lambda:self.setting(key,value));return
@@ -270,7 +296,8 @@ class Controller(QObject):
             return
         if name=='github':
             QDesktopServices.openUrl(QUrl('https://github.com/tu5j4/mergen'));return
-        if self.job or self._stopping:self.status('Devam eden işlemin tamamlanmasını bekleyin.');return
+        reading_action=name in ('region','full','overlay','start','once','clear-context')
+        if (self.job and not (self._job_read_only and reading_action)) or self._stopping:self.status('Devam eden işlemin tamamlanmasını bekleyin.');return
         try:
             if name=='uninstall':
                 if not getattr(sys,'frozen',False) or not self.uninstaller_path().is_file():
@@ -289,11 +316,11 @@ class Controller(QObject):
                 elif name=='once':backend.translate_now()
                 else:backend.toggle_run()
                 self._state['running']=backend.running;self.changed.emit()
-            elif name=='recommended':
-                profile=getattr(self,'_profile',None)
-                if not profile:return
-                self._pending=('plan',profile)
-                self.confirmation.emit('önerilen bileşenleri kur','bu bileşen ve kütüphaneler internetten indirilecek. birkaç gb alan gerekebilir.')
+            elif name in ('recommended','automatic-setup'):
+                self._state.update(operationTitle='donanıma göre otomatik kurulum',phase='donanım taranıyor…',
+                    validation=[],validationSummary='kurulumdan sonra gerçek modeller doğrulanacak.',progress=-1)
+                self.navigate.emit(2)
+                self.release_backend(lambda:self.start_job(lambda emit:service.automatic_setup(replace(self.settings),emit),self.automatic_setup_done))
             elif name=='clear-context':
                 if self.backend:self.backend._clear_context()
                 else:self.status('Konuşma hafızası boş.')
@@ -312,10 +339,16 @@ class Controller(QObject):
     def component(self,operation,key):
         if key not in COMPONENTS or operation not in ('install','remove'):return
         if self.job or self._stopping:return
+        if operation=='install' and COMPONENTS[key].get('bundled'):
+            self._state.update(operationTitle='model dosyaları doğrulanıyor',phase='doğrulama hazırlanıyor…',activeComponent=key,progress=-1)
+            self.release_backend(lambda:self.start_job(lambda emit:service.install(key,emit),lambda _:self.component_done()))
+            return
         self._pending=(operation,key)
         title=COMPONENTS[key]['title']
         text=('bu bileşen ve kütüphaneler internetten indirilecek. birkaç gb alan gerekebilir.' if operation=='install'
               else 'seçili bileşen kaldırılacak. gerektiğinde yeniden indirebilirsin.')
+        if operation=='remove' and COMPONENTS[key].get('bundled'):
+            text='seçili model kaldırılacak. yeniden eklemek için bu sürümün kurulum paketini tekrar çalıştırman gerekir.'
         self.confirmation.emit(title.lower(),text)
 
     @Slot(bool)

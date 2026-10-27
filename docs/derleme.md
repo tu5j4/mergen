@@ -1,13 +1,15 @@
-﻿# derleme ve imzalama
+# derleme ve imzalama
 
-windows x64 üzerinde python 3.12 ile ayrı bir sanal ortam oluştur. `installer/requirements-ui.txt` ve `pyinstaller>=6,<7` paketlerini kur. `python scripts/build_executable.py` arayüzü `dist/Mergen` altında üretir; modeller exe içine gömülmez.
+windows x64 ve python 3.12 ile ayrı bir derleme ortamı kullan. `installer/requirements-ui.txt` ile `pyinstaller>=6,<7` paketlerini kur. `python scripts/export_next_source.py <yeni-temiz-klasör>` yalnızca kaynak izin listesini dışa aktarır. ayarlar, günlükler, ekran görüntüleri, modeller, eğitim verisi ve özel anahtarlar bu pakete girmez. kişisel yolların derlenmiş dosyalara taşınmaması için temiz kopyayı genel bir derleme klasöründe derle.
 
-`powershell -ExecutionPolicy Bypass -File scripts/fetch_build_tools.ps1 -PythonExe <python-yolu>` doğrulanan python ve inno setup araçlarını hazırlar. `python scripts/build_installer.py` kolay kurulum exe’sini `release` altında oluşturur. kişisel kullanıcı yollarını ikili dosyalara taşımamak için temiz kaynak dışa aktarımını genel bir derleme klasöründe derle.
+`python scripts/build_executable.py` arayüzü `dist/Mergen` altında oluşturur. model kütüphaneleri bu arayüz paketine gömülmez; uygulama içinden ayrı ortamlara kurulur.
 
-kaynak paketi: `python scripts/export_next_source.py <yeni-hedef>`. izin listesinin dışında kalan ayarlar, ortamlar, modeller, günlükler, ekran görüntüleri ve özel anahtarlar dışa aktarılmaz. paket manifesti sha256 içerir.
+`scripts/fetch_build_tools.ps1` doğrulanan inno setup ve taşınabilir python araçlarını hazırlar. sabit model paketi için `scripts/prepare_model_payload.py` kullanılır. dağıtımdaki bütün metin ve model kartlarında kişisel yol bulunmadığını denetle; model dosyalarının boyut ve sha256 bilgilerini `assets/bundled-models.json` içine kaydet. model ağırlıkları kaynak zip'ine konulmaz.
 
-imzalama: `python scripts/sign_release_local.py --key <özel-anahtar-yolu>`. araç, özel anahtarın uygulamadaki açık anahtarla eşleştiğini kontrol eder; kurulum exe’si için imzalı `mergen-update.json` ve `SHA256SUMS.txt` üretir. bu ed25519 güncelleme imzasıdır; windows authenticode sertifikası değildir. özel anahtar repoya veya dağıtıma eklenmez.
+`scripts/pack_model_archives.py` dört büyük ağırlığı bayt şeritleri ve xz ile kayıpsız paketler. `assets/packed-models.json` özgün dosya ve arşiv özetlerini tutar. hazır arşivleri tekrar üretmek gerekmez. `python scripts/build_installer.py --model-payload <sabit-paket> --packed-payload <kayıpsız-arşivler>` tek dosyalık tam kurulumu üretir. kurulumda model dosyaları özgün özetleriyle geri açılır. tam exe, windows kurulum boyutu sınırını aşmamalıdır.
 
-0.3.0’da, eski özel anahtarın kaybolması nedeniyle yeni anahtar kullanılır. 0.2.0 kullanıcıları 0.3.0 kurulum exe’sini elle çalıştırmalıdır. imza doğrulamasını devre dışı bırakan bir geçiş uygulanmaz.
+github sürüm dosyası başına 2 gib sınırı için `python scripts/build_download_bootstrap.py --installer <tam-kurulum.exe> --output <yayın-klasörü>` çalıştır. araç tam kurulumu 2000 mib altındaki `.data` parçalarına böler; bütün sha256 özetlerini içine sabitleyen küçük bir windows forms başlatıcısı derler. başlatıcı her parçayı ve birleşen exe'yi doğrulamadan kurulumu çalıştırmaz. kullanıcı yalnızca başlatıcı exe'yi açar. `.data` parçaları aynı sabit tam kurulumun baytlarıdır.
 
-qwen 0.6b bağlam yardımcısı deneysel kaynak olarak korunur ve ana çeviri akışında çalıştırılmaz. altyazılar ve yerel deney sonuçları kaynak paketine dahil değildir.
+`python scripts/sign_release_local.py --key <özel-anahtar> --installer <başlatıcı.exe> --output <yayın-klasörü>` başlatıcı için ed25519 imzalı güncelleme bildirimi üretir. bu windows authenticode sertifikası değildir. özel anahtar dağıtıma veya repoya eklenmez. kaynak zip'i, paket parçaları ve diğer belgeler için ayrıca sha256 listesi üret.
+
+github commitlerinde author ve committer kimliklerini açıkça github kullanıcı adı ve github noreply adresiyle belirt. kaynak ağacını, yayımlanan dosya boyut/özetlerini, sürüm sabitlerini ve commit kimliklerini yayın sonrasında tekrar doğrula.

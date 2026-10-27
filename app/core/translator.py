@@ -18,11 +18,15 @@ from .session_context import SessionContext, TranslationPlan
 class Translator:
     def __init__(self, model_dir: Path, beam_size: int = 4, cache_size: int = 2000,
                  device: str = 'auto', backend: str = 'local') -> None:
+        self.context_model = Path(model_dir).name == 'nllb-1.3b-baglam-v3'
+        if self.context_model and backend=='local':
+            backend='cpu' if device=='cpu' else 'nvidia'
         if backend != 'local':
             from .runtime_client import RuntimeClient
             self._runtime = RuntimeClient('translate', backend, model=str(model_dir))
             self.device = self._runtime.device
             self.compute_type = 'float32' if backend in ('amd','intel') else 'auto'
+            if self.context_model:self.compute_type='auto' if backend=='nvidia' else 'float32'
             self.beam_size, self.cache_size = beam_size, cache_size
             self._cache = OrderedDict()
             self.last_glossary_ms = self.last_retry_count = self.last_context_ms = 0
@@ -145,6 +149,28 @@ class Translator:
         self.last_context_ms = 0.0
         if not texts:
             return []
+        if getattr(self,'context_model',False):
+            # No worker-owned history: cancelled scans and warmups cannot pollute
+            # the next request. Cache identity includes the actual source window.
+            history=[d.source for d in context.history if d.language==src_code][-3:] if context is not None else []
+            outputs=[];pending=[]
+            for text in texts:
+                window=tuple(history[-3:]) if context is not None else ()
+                key=('mergen-v3',src_code,text,window)
+                result=self._cache_get(key)
+                if result is None:
+                    pending.append((len(outputs),key,text,list(window)))
+                outputs.append(result)
+                if context is not None:history.append(text)
+            for start in range(0,len(pending),3):
+                group=pending[start:start+3]
+                translated=self._runtime.request(op='translate',texts=[p[2] for p in group],histories=[p[3] for p in group],
+                    source=src_code,target=TARGET_NLLB,beam=4)
+                if len(translated)!=len(group) or any(not isinstance(t,str) or not t.strip() for t in translated):
+                    raise RuntimeError('bağlamlı model tüm replikler için geçerli sonuç döndürmedi')
+                for (index,key,_,_),result in zip(group,translated):
+                    outputs[index]=result;self._cache_put(key,result)
+            return outputs
         beam = max(1, int(beam_size or self.beam_size))
         pivot = via_english and src_code in ("zho_Hans", "zho_Hant")
         context_start = time.perf_counter()

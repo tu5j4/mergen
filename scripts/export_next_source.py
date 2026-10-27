@@ -6,8 +6,8 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TREES = {'app': {'.py', '.qml', '.json'}, 'assets': {'.png', '.ico', '.svg', '.pem'},
-         'installer': {'.py', '.iss', '.ps1', '.txt'}, 'scripts': {'.py', '.ps1'},
+TREES = {'app': {'.py', '.qml', '.json'}, 'assets': {'.png', '.ico', '.svg', '.pem', '.json'},
+         'installer': {'.py', '.iss', '.ps1', '.txt', '.cs'}, 'scripts': {'.py', '.ps1'},
          'tests': {'.py'}, 'docs': {'.md'}, '.github': {'.yml', '.yaml'}}
 FILES = ('AGENTS.md', 'main.py', 'next_main.py', 'baslat.bat', 'kurulum.bat',
          'requirements.txt', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',

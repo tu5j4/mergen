@@ -24,22 +24,10 @@ NLLB = {
 
 
 def convert_nllb(large: bool) -> str:
-    from ctranslate2.converters import TransformersConverter
-    from transformers import AutoTokenizer
-
-    hf_name, folder = NLLB[large]
-    out = MODELS_DIR / folder
-    if (out / "model.bin").is_file() and (out / "tokenizer" / "tokenizer_config.json").is_file():
-        print(f"[nllb] zaten mevcut: {out}")
-        return folder
-
-    out.parent.mkdir(parents=True, exist_ok=True)
-    print(f"[nllb] {hf_name} indiriliyor ve CTranslate2 int8 formatına çevriliyor…")
-    print("       (bu adım için geçici olarak torch + transformers gerekir)")
-    TransformersConverter(hf_name).convert(str(out), quantization="int8", force=True)
-    AutoTokenizer.from_pretrained(hf_name).save_pretrained(str(out / "tokenizer"))
-    print(f"[nllb] hazır: {out}")
-    return folder
+    from installer.bundled import verify_component
+    from app.storage import DATA_ROOT
+    verify_component('1300m' if large else '600m',DATA_ROOT)
+    return 'nllb-1.3b-baglam-v3' if large else 'nllb-200-distilled-600M-ct2'
 
 
 def warm_manga_ocr() -> None:

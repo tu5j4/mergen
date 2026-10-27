@@ -26,6 +26,11 @@ def sign(installer, key_path, output, notes):
     payload = dict(version=VERSION,
         url=f'https://github.com/{REPOSITORY}/releases/download/v{VERSION}/{installer.name}',
         bytes=installer.stat().st_size, sha256=digest, notes=notes)
+    parts=[]
+    for part in sorted(installer.parent.glob(installer.stem+'-*.bin')):
+        with part.open('rb') as stream:hashed=hashlib.file_digest(stream,'sha256').hexdigest()
+        parts.append(dict(url=payload['url'].rsplit('/',1)[0]+'/'+part.name,bytes=part.stat().st_size,sha256=hashed))
+    if parts:payload['parts']=parts
     canonical = json.dumps(payload, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
     envelope = dict(payload=payload, signature=base64.b64encode(key.sign(canonical)).decode('ascii'))
     verify(envelope)
@@ -33,6 +38,7 @@ def sign(installer, key_path, output, notes):
     (output / 'mergen-update.json').write_text(json.dumps(envelope, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
     checks = [(installer.name, payload['sha256']),
               ('mergen-update.json', hashlib.sha256((output/'mergen-update.json').read_bytes()).hexdigest())]
+    checks += [(row['url'].rsplit('/',1)[-1],row['sha256']) for row in parts]
     (output / 'SHA256SUMS.txt').write_text(''.join(digest+'  '+name+'\n' for name,digest in checks), encoding='utf-8')
     return envelope
 

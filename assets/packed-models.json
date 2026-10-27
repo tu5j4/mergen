@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "format": "byte-lanes-xz-streams",
+  "files": [
+    {
+      "path": "models/nllb-200-distilled-600M-hf/pytorch_model.bin",
+      "bytes": 2460457927,
+      "sha256": "c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
+      "archive": "weights-0.xz",
+      "archive_bytes": 1089431304,
+      "archive_sha256": "a1ce4df82ec7a363b096af57a834cfe417611d295d2e8ff3982c20f1d6d8086a",
+      "width": 4,
+      "chunk": 33554432
+    },
+    {
+      "path": "models/nllb-1.3b-baglam-v3/base-bf16/model.safetensors",
+      "bytes": 2741397600,
+      "sha256": "219867a2cb585ac7b66f1bf28ba7692474d7626ff4779404e5837afc190dc34b",
+      "archive": "weights-1.xz",
+      "archive_bytes": 1870070044,
+      "archive_sha256": "c0c9e5522b300ba006a0dafcfb575e7c5af72a9d2021bebfe70318c9dd1b90d6",
+      "width": 2,
+      "chunk": 33554432
+    },
+    {
+      "path": "models/manga/pytorch_model.bin",
+      "bytes": 444135475,
+      "sha256": "c63e0bb5b3ff798c5991de18a8e0956c7ee6d1563aca6729029815eda6f5c2eb",
+      "archive": "weights-2.xz",
+      "archive_bytes": 374411000,
+      "archive_sha256": "aae964cb1c0261d2aab8c2fed1608c6e023b1be6b4edfd88ef2b63b581d894f8",
+      "width": 4,
+      "chunk": 33554432
+    },
+    {
+      "path": "models/nllb-1.3b-baglam-v3/adapter-masked/adapter_model.safetensors",
+      "bytes": 94479552,
+      "sha256": "bea8311ac9d21c7f19491d2fb860ed8eb2853f3b93fe463aadba9ec14703a325",
+      "archive": "weights-3.xz",
+      "archive_bytes": 78760224,
+      "archive_sha256": "9f76c5119ef08abf0694ea6f1aab28b7e3e6d3be8245534c7c93a2165f9f45aa",
+      "width": 4,
+      "chunk": 33554432
+    }
+  ]
+}

@@ -33,6 +33,7 @@ def python312():
 def model_paths(key):
     item=COMPONENTS[key]
     if item['kind']=='environment': return [DATA_ROOT/'envs'/key]
+    if item.get('context'): return [DATA_ROOT/'models'/item['folder']]
     if item['kind']=='translation': return [DATA_ROOT/'models'/(item['folder']+suffix) for suffix in ('-hf','-ct2')]
     if item['kind']=='manga': return [DATA_ROOT/'models/manga']
     return [DATA_ROOT/'models/ocr'/item['family']/name for name in item['names']]
@@ -43,8 +44,14 @@ def inventory():
     for key,item in COMPONENTS.items():
         paths=model_paths(key)
         ready=all((p/'mergen-ready.json').is_file() for p in paths)
+        if ready and item['kind']=='environment':
+            try:ready=all(json.loads((p/'mergen-ready.json').read_text(encoding='utf-8')).get('runtime_schema')==2 for p in paths)
+            except (OSError,ValueError):ready=False
+        if item.get('bundled'):
+            from .bundled import check_component
+            ready=check_component(key, DATA_ROOT)
         partial=item['kind']!='environment' and (DATA_ROOT/'cache/model-downloads'/key).is_dir()
-        state[key]={'ready':ready,'present':any(p.exists() for p in paths) or partial,'title':item['title'],'detail':item['detail'],'kind':item['kind']}
+        state[key]={'ready':ready,'present':any(p.exists() for p in paths) or partial,'title':item['title'],'detail':item['detail'],'kind':item['kind'],'bundled':item.get('bundled',False)}
     return state
 
 
@@ -90,6 +97,10 @@ def install(key, emit=print):
     check_cancelled()
     if key not in COMPONENTS: raise ValueError('Bilinmeyen bileşen')
     item=COMPONENTS[key]
+    if item.get('bundled'):
+        from .bundled import verify_component
+        verify_component(key, DATA_ROOT, lambda text:event(emit,phase=text,progress=-1))
+        return
     if shutil.disk_usage(DATA_ROOT).free < (12 if key=='amd' else 7)*1024**3:
         raise RuntimeError('Kurulum için en az 7 GB; AMD ortamı için 12 GB boş alan gerekiyor.')
     if item['kind']=='environment':
@@ -127,7 +138,7 @@ def install(key, emit=print):
                 check+=";import paddle;paddle.set_device('cpu');assert float(paddle.matmul(paddle.ones([4,4]),paddle.ones([4,4])).sum().numpy())==64;print('Paddle CPU işlem testi geçti')"
         run([python,'-c',check],emit)
         check_cancelled()
-        (path/'mergen-ready.json').write_text(json.dumps({'runtime':key,'tensor_test':True}),encoding='utf-8')
+        (path/'mergen-ready.json').write_text(json.dumps({'runtime':key,'tensor_test':True,'runtime_schema':2}),encoding='utf-8')
         return
     state=inventory()
     runtime='cpu'
@@ -157,7 +168,7 @@ def event(emit, **data):
 def task_components(settings,task):
     from app.core.runtime_client import environment_key
     if task=='translate':
-        return [settings.translation_backend,'1300m' if '1.3B' in settings.translation_model else '600m']
+        return [settings.translation_backend,'1300m' if settings.translation_model=='nllb-1.3b-baglam-v3' or '1.3B' in settings.translation_model else '600m']
     if task=='manga':return [settings.manga_backend,'manga']
     family='torch' if settings.ocr_backend in ('amd','intel') else 'paddle'
     keys=[environment_key(settings.ocr_backend,'ocr'),'ocr-'+family]
@@ -166,6 +177,7 @@ def task_components(settings,task):
 
 def component_ready(settings,task,key,state):
     if task=='translate' and key in ('600m','1300m'):
+        if key=='1300m':return state[key]['ready'] and settings.translation_model==COMPONENTS[key]['folder']
         folder=DATA_ROOT/'models'/settings.translation_model
         if settings.translation_backend in ('cpu','nvidia'):
             return (folder/'model.bin').is_file() and (folder/'tokenizer').is_dir()
@@ -263,3 +275,47 @@ def missing_components(settings):
         for key in task_components(settings,task):
             if not component_ready(settings,task,key,state) and key not in missing:missing.append(key)
     return [COMPONENTS[key]['title'] for key in missing]
+
+
+def automatic_setup(settings, emit=print):
+    """Detect again, install only needed runtimes, and commit only tested devices."""
+    from dataclasses import replace
+    from .hardware import detect
+    from .profiles import recommended,eligible
+    report=detect()
+    if not eligible('cpu',report):raise RuntimeError('bu cihaz windows x64 ve avx gereksinimlerini karşılamıyor')
+    backend=recommended(report)['translation']
+    requested=backend
+    fallback=''
+    def ensure(key):
+        check_cancelled()
+        event(emit,kind='component',key=key,phase=COMPONENTS[key]['title']+' kontrol ediliyor',progress=-1)
+        if not inventory()[key]['ready']:install(key,emit)
+    ensure('cpu')
+    if backend!='cpu':
+        try:ensure(backend)
+        except Cancelled:raise
+        except Exception as exc:
+            fallback=str(exc);backend='cpu'
+            event(emit,phase='ekran kartı ortamı kurulamadı · cpu ortamıyla devam ediliyor',progress=-1)
+    trial=replace(settings,translation_backend=backend,ocr_backend='cpu',
+        manga_backend='nvidia' if backend=='nvidia' else 'cpu')
+    for key in dict.fromkeys(k for task in ('translate','ocr','manga')
+            if task!='manga' or trial.source_lang=='ja' and trial.use_manga_ocr
+            for k in task_components(trial,task) if COMPONENTS[k]['kind']!='environment'):
+        ensure(key)
+    first=validate(trial,emit)
+    gpu_tasks=['translate']+(['manga'] if trial.manga_backend==backend and backend!='cpu' else [])
+    gpu_failed=backend!='cpu' and any(row['task'] in gpu_tasks and row['status']!='passed' for row in first['rows'])
+    result=first
+    if gpu_failed:
+        fallback='ekran kartında gerçek model testi geçmedi'
+        event(emit,phase='ekran kartı model testi geçmedi · cpu modelleri doğrulanıyor',progress=-1)
+        trial=replace(trial,translation_backend='cpu',manga_backend='cpu')
+        result=validate(trial,emit)
+    result=dict(result,automatic=True,requested_backend=requested,fallback_reason=fallback,
+        initial_gpu_test=first if gpu_failed else None,
+        selected_settings={key:getattr(trial,key) for key in ('translation_backend','ocr_backend','manga_backend')})
+    check_cancelled()
+    (DATA_ROOT/'automatic-setup.json').write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
+    return result

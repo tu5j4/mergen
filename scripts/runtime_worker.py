@@ -42,6 +42,14 @@ def torch_device(backend):
 
 
 def initialize(args, progress=lambda phase:None):
+    if args.task=='translate' and Path(args.model).name=='nllb-1.3b-baglam-v3':
+        progress('mergen bağlamlı 1.3b modeli ve lora yükleniyor')
+        from app.gpu_env import setup_cuda_dll_paths
+        setup_cuda_dll_paths()
+        from app.core.nllb_context import ContextModel
+        device=torch_device(args.backend)
+        model=ContextModel(DATA_ROOT/'models/nllb-1.3b-baglam-v3',device)
+        return device,model.infer
     if args.task == 'translate' and args.backend in ('cpu','nvidia'):
         progress('çeviri kütüphaneleri ve model yükleniyor')
         from app.gpu_env import setup_cuda_dll_paths

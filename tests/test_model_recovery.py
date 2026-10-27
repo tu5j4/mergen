@@ -18,7 +18,7 @@ class ModelRecoveryTests(unittest.TestCase):
                 path.mkdir(parents=True,exist_ok=True)
                 (path/'partial').write_bytes(b'reusable download')
                 raise ConnectionError('interrupted')
-            with patch.object(models,'DATA_ROOT',root),patch.object(models,'model_lock',return_value=contextlib.nullcontext()),patch.object(models,'download',side_effect=interrupted):
+            with patch.dict(models.COMPONENTS,{'manga':dict(models.COMPONENTS['manga'],bundled=False)}),patch.object(models,'DATA_ROOT',root),patch.object(models,'model_lock',return_value=contextlib.nullcontext()),patch.object(models,'download',side_effect=interrupted):
                 with self.assertRaises(ConnectionError):models.install_model('manga')
             partial=root/'cache/model-downloads/manga/manga/partial'
             self.assertTrue(partial.exists())
@@ -27,7 +27,7 @@ class ModelRecoveryTests(unittest.TestCase):
                 self.assertTrue((path/'partial').exists())
                 for name in ('pytorch_model.bin','config.json','vocab.txt','preprocessor_config.json'):
                     (path/name).write_bytes(b'test')
-            with patch.object(models,'DATA_ROOT',root),patch.object(models,'model_lock',return_value=contextlib.nullcontext()),patch.object(models,'download',side_effect=resume):
+            with patch.dict(models.COMPONENTS,{'manga':dict(models.COMPONENTS['manga'],bundled=False)}),patch.object(models,'DATA_ROOT',root),patch.object(models,'model_lock',return_value=contextlib.nullcontext()),patch.object(models,'download',side_effect=resume):
                 models.install_model('manga')
             self.assertTrue((root/'models/manga/mergen-ready.json').is_file())
             self.assertFalse((root/'cache/model-downloads/manga').exists())
@@ -48,7 +48,7 @@ class ModelRecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder)
             def invalid(repo,path,**kwargs):path.mkdir(parents=True,exist_ok=True)
-            with patch.object(models,'DATA_ROOT',root),patch.object(models,'model_lock',return_value=contextlib.nullcontext()),patch.object(models,'download',side_effect=invalid):
+            with patch.dict(models.COMPONENTS,{'manga':dict(models.COMPONENTS['manga'],bundled=False)}),patch.object(models,'DATA_ROOT',root),patch.object(models,'model_lock',return_value=contextlib.nullcontext()),patch.object(models,'download',side_effect=invalid):
                 with self.assertRaises(RuntimeError):models.install_model('manga')
             self.assertFalse(list(root.rglob('mergen-ready.json')))
 

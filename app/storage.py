@@ -9,7 +9,7 @@ INSTALL_ROOT = Path(sys.executable).parent if getattr(sys, 'frozen', False) else
 DATA_ROOT = Path(os.environ.get('MERGEN_DATA_DIR',
     Path(os.environ.get('LOCALAPPDATA', Path.home())) / 'mergen-next'
     if getattr(sys, 'frozen', False) else APP_ROOT / '.data')).resolve()
-VERSION = '0.3.1'
+VERSION = '0.4.0'
 REPOSITORY = 'tu5j4/mergen'
 
 

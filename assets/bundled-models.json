@@ -1,0 +1,265 @@
+{
+  "schema": 1,
+  "release": "0.4.0",
+  "translation_versions": {
+    "600m": "original-standard",
+    "1300m": "mergen-context-v1"
+  },
+  "ocr_sources": {
+    "manga": [
+      "kha-white/manga-ocr-base",
+      "aa6573bd10b0d446cbf622e29c3e084914df9741"
+    ],
+    "korean": [
+      "PaddlePaddle/korean_PP-OCRv5_mobile_rec",
+      "c02ecaf1f22bfd1c618cce154fd19185b47e663a"
+    ]
+  },
+  "components": {
+    "600m": [
+      {
+        "path": "models/nllb-200-distilled-600M-hf/config.json",
+        "bytes": 846,
+        "sha256": "f9b4081d3d108e9d06532ea8d92b932c04ed3a15ff2f87e6982f8e14db51fbc5"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-hf/generation_config.json",
+        "bytes": 189,
+        "sha256": "0bb604cdb8392649176935a447ce994128f170a6908c135a17d0e3dfb8113cb2"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-hf/pytorch_model.bin",
+        "bytes": 2460457927,
+        "sha256": "c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-hf/sentencepiece.bpe.model",
+        "bytes": 4852054,
+        "sha256": "14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-hf/special_tokens_map.json",
+        "bytes": 3548,
+        "sha256": "992bd4ed610d644d6823081937bcc91bb8878dd556cea4ae5327f2480361330e"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-hf/tokenizer.json",
+        "bytes": 17331176,
+        "sha256": "e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-hf/tokenizer_config.json",
+        "bytes": 564,
+        "sha256": "d1aa8c3697d3e35674f97b5b7e9c99d22b010f528e80140257d97316be90d044"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-ct2/config.json",
+        "bytes": 233,
+        "sha256": "72901fbd8abd89fb5cf4a388f26fc681f5c4c58a1e1a88b30b879f107270e7ee"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-ct2/model.bin",
+        "bytes": 622596105,
+        "sha256": "01a1afe0f8ee492e0a1385c1a2984e42cf00558efc7fa3535279b949b9c9ae29"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-ct2/shared_vocabulary.json",
+        "bytes": 6177383,
+        "sha256": "768aa4170693765cb4c62fc485ea4fd954cd3e5a44bc645d11d83f41f2393776"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-ct2/tokenizer/tokenizer.json",
+        "bytes": 32240136,
+        "sha256": "b3be18cc91c94d4a1d83731ace4dac0b90a7db024edecdeb9fe7d19ec01ce901"
+      },
+      {
+        "path": "models/nllb-200-distilled-600M-ct2/tokenizer/tokenizer_config.json",
+        "bytes": 3895,
+        "sha256": "964caff276bb8989472f70e7ee4947e83b093e9bdb5fcc4e6d044645bc413b08"
+      }
+    ],
+    "1300m": [
+      {
+        "path": "models/nllb-1.3b-baglam-v3/base-bf16/config.json",
+        "bytes": 813,
+        "sha256": "c14f245a49bde459243a2dfe668d58eab5ff5b0b284eb9a4797fb8b465487130"
+      },
+      {
+        "path": "models/nllb-1.3b-baglam-v3/base-bf16/generation_config.json",
+        "bytes": 193,
+        "sha256": "64e8f3b936cf0fe45587b281fe09e42515ab38a98c7c27c6b29c5b5d3a4297e5"
+      },
+      {
+        "path": "models/nllb-1.3b-baglam-v3/base-bf16/model.safetensors",
+        "bytes": 2741397600,
+        "sha256": "219867a2cb585ac7b66f1bf28ba7692474d7626ff4779404e5837afc190dc34b"
+      },
+      {
+        "path": "models/nllb-1.3b-baglam-v3/base-bf16/tokenizer.json",
+        "bytes": 32240136,
+        "sha256": "b3be18cc91c94d4a1d83731ace4dac0b90a7db024edecdeb9fe7d19ec01ce901"
+      },
+      {
+        "path": "models/nllb-1.3b-baglam-v3/base-bf16/tokenizer_config.json",
+        "bytes": 3894,
+        "sha256": "65ee987575afed3843758bb81cae7dfb30c1c7ce62e55cfa75c51d8d66812b7c"
+      },
+      {
+        "path": "models/nllb-1.3b-baglam-v3/adapter-masked/adapter_config.json",
+        "bytes": 1193,
+        "sha256": "47787742ee2398c5c1eff45203791b52e0c7f17edc13537e6c7b34b7d038e2de"
+      },
+      {
+        "path": "models/nllb-1.3b-baglam-v3/adapter-masked/adapter_model.safetensors",
+        "bytes": 94479552,
+        "sha256": "bea8311ac9d21c7f19491d2fb860ed8eb2853f3b93fe463aadba9ec14703a325"
+      },
+      {
+        "path": "models/nllb-1.3b-baglam-v3/adapter-masked/README.md",
+        "bytes": 559,
+        "sha256": "8d1e394c097ccf9a6f507348fc8709dc409af783989760bd57242378778ba9ae"
+      }
+    ],
+    "ocr-paddle": [
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_det/config.json",
+        "bytes": 2871,
+        "sha256": "7ac1c33f377ba58561f4b89d3180b6add2b7c5c60a4edac90fa4e0ceccdc6665"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_det/inference.json",
+        "bytes": 229777,
+        "sha256": "05feef1acb00aa4cd7362b15f7f501fc4f99d7b1fa73c1c871e0c7b1504b0f5c"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_det/inference.pdiparams",
+        "bytes": 4692937,
+        "sha256": "afa1820cb16c1fd0dad589d0f8b389139061c1ef6d68019685fd07be997dda5b"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_det/inference.yml",
+        "bytes": 903,
+        "sha256": "98069072e1b6b37d727fd9d9f11725faa46d6ea0de012f2ed26caea011c37699"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_det/README.md",
+        "bytes": 16243,
+        "sha256": "4cc20ad6d41af86b3ce9885ffb0956e152574a2eb14179aeb07fd2d3956161ca"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_rec/config.json",
+        "bytes": 352253,
+        "sha256": "6df1587ae056f0b987125fc894b17f62ae3a12644fa2488d108f19377da9c1a8"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_rec/inference.json",
+        "bytes": 217724,
+        "sha256": "24587345250c7332d0fc6f9a44e794d078cdaeb64c302fef906f325619de2569"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_rec/inference.pdiparams",
+        "bytes": 16458665,
+        "sha256": "2460da90875937c94db97eba74ae3d9e5d4c4c57c42f1f41531c09a26bcc771a"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_rec/inference.yml",
+        "bytes": 148345,
+        "sha256": "5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e"
+      },
+      {
+        "path": "models/ocr/paddle/PP-OCRv5_mobile_rec/README.md",
+        "bytes": 16075,
+        "sha256": "b02727443cef4904a9ee12accdfaf66fcbada7b93a1a05c40dde7582291ba28c"
+      },
+      {
+        "path": "models/ocr/paddle/PP-LCNet_x1_0_textline_ori/config.json",
+        "bytes": 2487,
+        "sha256": "c1a2576f9713adabdc4a58d9d654fcc9ea93b6efd0e2d3581d5aab409a33f14f"
+      },
+      {
+        "path": "models/ocr/paddle/PP-LCNet_x1_0_textline_ori/inference.json",
+        "bytes": 104399,
+        "sha256": "b81929eeaff8e52db0fafb49c9fbfc5bc0572f81641fe0179cc52096323fb4d4"
+      },
+      {
+        "path": "models/ocr/paddle/PP-LCNet_x1_0_textline_ori/inference.pdiparams",
+        "bytes": 6743918,
+        "sha256": "0de2bcf996cf553e2b848dd7b1769dafffc6917b1ccdf55c1d8efe7909fbf743"
+      },
+      {
+        "path": "models/ocr/paddle/PP-LCNet_x1_0_textline_ori/inference.yml",
+        "bytes": 735,
+        "sha256": "8d5120d0e1a30a9df7ed46aa9119da3796ed066777089d1c1d705f132d5e90f9"
+      },
+      {
+        "path": "models/ocr/paddle/PP-LCNet_x1_0_textline_ori/README.md",
+        "bytes": 3554,
+        "sha256": "c2de067422621e296f697b849b90b8f6cae090a8e0a27d8b04eeb8d68ffb8ce0"
+      }
+    ],
+    "korean-paddle": [
+      {
+        "path": "models/ocr/paddle/korean_PP-OCRv5_mobile_rec/config.json",
+        "bytes": 229129,
+        "sha256": "c86a49d6301e6c4ff3398a87a2a1926b3521a46e90042833e18bbfa8ba6165c2"
+      },
+      {
+        "path": "models/ocr/paddle/korean_PP-OCRv5_mobile_rec/inference.json",
+        "bytes": 217724,
+        "sha256": "562404e3c590c50c93778d5f0a94df21b47b5ab8f3ea6d47c7f8a7930c3bc844"
+      },
+      {
+        "path": "models/ocr/paddle/korean_PP-OCRv5_mobile_rec/inference.pdiparams",
+        "bytes": 13342671,
+        "sha256": "cac3e5f12cf04aaa77f6a5bc704e4e736ef2908476551891d84b41b4e9090462"
+      },
+      {
+        "path": "models/ocr/paddle/korean_PP-OCRv5_mobile_rec/inference.yml",
+        "bytes": 96039,
+        "sha256": "f757fa1c40e99edcf27e9cce879b93eb2a51fa46f5ef39095689b8c37dd75998"
+      },
+      {
+        "path": "models/ocr/paddle/korean_PP-OCRv5_mobile_rec/README.md",
+        "bytes": 7110,
+        "sha256": "0524f6bd8681b9b37f817a11a0bdd8cc99d5a4968b65b693baf532fb73f8a99b"
+      }
+    ],
+    "manga": [
+      {
+        "path": "models/manga/config.json",
+        "bytes": 77546,
+        "sha256": "8c0e395de8fa699daaac21aee33a4ba9bd1309cfbff03147813d2a025f39f349"
+      },
+      {
+        "path": "models/manga/preprocessor_config.json",
+        "bytes": 228,
+        "sha256": "af4eb4d79cf61b47010fc0bc9352ee967579c417423b4917188d809b7e048948"
+      },
+      {
+        "path": "models/manga/pytorch_model.bin",
+        "bytes": 444135475,
+        "sha256": "c63e0bb5b3ff798c5991de18a8e0956c7ee6d1563aca6729029815eda6f5c2eb"
+      },
+      {
+        "path": "models/manga/README.md",
+        "bytes": 705,
+        "sha256": "32f413afcc4295151e77d25202c5c5d81ef621b46f947da1c3bde13256dc0d5f"
+      },
+      {
+        "path": "models/manga/special_tokens_map.json",
+        "bytes": 112,
+        "sha256": "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3"
+      },
+      {
+        "path": "models/manga/tokenizer_config.json",
+        "bytes": 486,
+        "sha256": "d775ad1deac162dc56b84e9b8638f95ed8a1f263d0f56f4f40834e26e205e266"
+      },
+      {
+        "path": "models/manga/vocab.txt",
+        "bytes": 24072,
+        "sha256": "344fbb6b8bf18c57839e924e2c9365434697e0227fac00b88bb4899b78aa594d"
+      }
+    ]
+  }
+}

@@ -80,6 +80,10 @@ def publish(staged,target):
 
 def install_model(key):
     item=COMPONENTS[key]
+    if item.get('bundled'):
+        from installer.bundled import verify_component
+        verify_component(key,DATA_ROOT,phase)
+        return
     if item['kind']=='environment':raise ValueError('bu araç yalnız model indirir')
     staging=owned_path(DATA_ROOT,Path('cache/model-downloads')/key)
     with model_lock(key):

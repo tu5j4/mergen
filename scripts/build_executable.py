@@ -31,7 +31,7 @@ args=['--noconfirm','--clean','--windowed','--onedir','--name','Mergen','--versi
       '--paths',str(ROOT),'--hidden-import','PySide6.QtQuick','--hidden-import','PySide6.QtQuickControls2',
       '--hidden-import','cryptography.hazmat.primitives.asymmetric.ed25519']
 args+=['--add-binary',str(openmp)+os.pathsep+'.']
-for name in ('torch','torchvision','paddle','paddleocr','paddlex','transformers','ctranslate2','huggingface_hub',
+for name in ('torch','torchvision','peft','accelerate','paddle','paddleocr','paddlex','transformers','ctranslate2','huggingface_hub',
              'manga_ocr','scipy','pandas','matplotlib','IPython','notebook','pytest','tkinter'):
     args+=['--exclude-module',name]
 for folder in ('app','assets','installer','scripts'):
@@ -46,6 +46,7 @@ for folder in ('app','installer','scripts'):
             args+=['--add-data',str(path)+os.pathsep+str(Path('runtime-source')/path.parent.relative_to(ROOT))]
 for name in ('LICENSE','THIRD_PARTY_NOTICES.md'):
     args+=['--add-data',str(ROOT/name)+os.pathsep+'.']
+args+=['--add-data',str(ROOT/'assets/bundled-models.json')+os.pathsep+'runtime-source/assets']
 args+=[str(ROOT/'next_main.py')]
 PyInstaller.__main__.run(args)
 
@@ -68,3 +69,15 @@ import PySide6
 qt_dir=Path(PySide6.__file__).parent
 for pattern in ('MSVCP140*.dll','VCRUNTIME140*.dll'):
     for dll in qt_dir.glob(pattern):shutil.copy2(dll,bundle/dll.name)
+
+# Only 2D Qt Quick and still-image capture are used by the application.
+unused=['cv2/opencv_videoio_ffmpeg4140_64.dll']
+unused += ['PySide6/qml/'+name for name in ('Qt3D','QtQuick3D','QtCharts','QtDataVisualization','QtGraphs',
+    'QtLocation','QtMultimedia','QtPositioning','QtRemoteObjects','QtScxml','QtSensors','QtTextToSpeech','QtWebView')]
+for prefix in ('Qt6Quick3D','Qt6Quick3DPhysics','Qt63D','Qt6Charts','Qt6DataVisualization','Qt6Graphs','Qt6Pdf','Qt6Multimedia','Qt6Location','Qt6Positioning'):
+    unused += [str(p.relative_to(bundle)) for p in (bundle/'PySide6').glob(prefix+'*.dll')]
+for relative in unused:
+    target=bundle/relative
+    if not target.resolve().is_relative_to(bundle):raise ValueError('unsafe bundle prune path')
+    if target.is_dir():shutil.rmtree(target)
+    elif target.is_file():target.unlink()

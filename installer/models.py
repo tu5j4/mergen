@@ -14,6 +14,11 @@ def main():
     args = parser.parse_args()
     from app.runtime_paths import configure_runtime
     configure_runtime()
+    if args.component in ('manga','paddle','korean'):
+        from installer.bundled import verify_component
+        from app.storage import DATA_ROOT
+        verify_component({'manga':'manga','paddle':'ocr-paddle','korean':'korean-paddle'}[args.component],DATA_ROOT)
+        return
     if args.component in ('600m', '1300m'):
         from scripts.download_models import convert_nllb
         from app.config import Settings

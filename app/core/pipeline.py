@@ -417,6 +417,8 @@ class TranslationWorker(QObject):
         total = time.perf_counter() - t_start
         diagnostic["stage"] = "complete"
         diagnostic["elapsed_ms"] = round(total * 1000)
+        diagnostic["ocr_ms"] = round(ocr_t * 1000)
+        diagnostic["translation_ms"] = round(tr_t * 1000)
         self._write_scan_diagnostic(diagnostic)
         if gen == self._gen:
             self._job_full_retry = needs_full_retry

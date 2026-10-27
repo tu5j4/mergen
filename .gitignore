@@ -22,5 +22,6 @@ design-previews/
 .env
 .env.*
 artifacts/
+model-payload/
 testler/
 yerellestirme/

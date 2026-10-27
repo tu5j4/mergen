@@ -326,7 +326,7 @@ class ControlPanel(QWidget):
         self.chk_bubbles.toggled.connect(lambda v: setattr(self.s, "bubble_detection", v))
         self.cb_model = QComboBox()
         for folder, name in TRANSLATION_MODELS.items():
-            if (self.s.model_path.parent / folder / "model.bin").exists():
+            if (self.s.model_path.parent / folder / "model.bin").exists() or (self.s.model_path.parent / folder / 'adapter-masked/adapter_model.safetensors').exists():
                 self.cb_model.addItem(name, folder)
         current = self.cb_model.findData(self.s.translation_model)
         if current >= 0:

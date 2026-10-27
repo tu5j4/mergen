@@ -2,8 +2,9 @@
 
 mergen'in kendi kaynak kodu MIT lisanslıdır. İndirilen kütüphaneler, model
 ağırlıkları ve çalışma zamanları kendi lisanslarına tabidir. Kaynak dağıtımı
-model ağırlıklarını veya Python paketlerini içermez. Kurulumda seçilenler resmi
-paket kaynaklarından indirilir; bu indirmeler için internet gerekir.
+model ağırlıklarını veya Python paketlerini içermez. 0.4.0 kurulum paketi standart
+600m, mergen bağlamlı 1.3b v1 ve OCR ağırlıklarını içerir; çalışma kütüphaneleri
+uygulama içinden resmi paket kaynaklarından indirilir.
 
 | bileşen | kaynak / lisans |
 |---|---|
@@ -17,8 +18,9 @@ paket kaynaklarından indirilir; bu indirmeler için internet gerekir.
 | NVIDIA CUDA / cuDNN | [NVIDIA lisansları](https://docs.nvidia.com/cuda/eula/index.html), ayrı NVIDIA koşulları |
 
 NLLB kaynakları: Meta AI / NLLB Team, “No Language Left Behind: Scaling
-Human-Centered Machine Translation”, 2022. Kurulum, indirilen modeli
-CTranslate2 int8 biçimine dönüştürür. Bu dönüşüm modelin CC-BY-NC-4.0
+Human-Centered Machine Translation”, 2022. paketteki standart 600m modelinin CTranslate2 int8 ve orijinal hf biçimleri korunur.
+1.3b modeli mergen tarafından LoRA ile uyarlanmıştır; temel bf16 ağırlıkları,
+adapter ve özel dikkat maskesi birlikte kullanılır. Bu dönüşüm modelin CC-BY-NC-4.0
 koşullarını değiştirmez. Mergen kodunun MIT olması, NLLB modellerine ticari
 kullanım izni vermez. [Lisans metni](https://creativecommons.org/licenses/by-nc/4.0/).
 
@@ -32,3 +34,5 @@ ve ilgili yeniden dağıtım koşullarını ayrıca koruyun.
 
 microsoft visual c++ çalışma zamanı ve openmp kitaplığı (vcomp140.dll), microsoft'un yeniden dağıtılabilir çalışma zamanı bileşenleridir; kendi lisans koşullarına tabidir. uygulama bu dosyaları kendi klasöründe kullanır. kaynak: https://learn.microsoft.com/cpp/windows/redistributing-visual-cpp-files
 
+
+0.4.0 model ağırlıklarını kayıpsız xz ile paketler. kurulum sonunda özgün dosyalar aynı sha256 özetiyle geri oluşturulur; bu paketleme modeli veya lisansını değiştirmez.

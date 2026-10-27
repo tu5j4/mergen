@@ -6,7 +6,7 @@ import QtQuick.Window
 ApplicationWindow {
     id: root
     visible: true
-    title: "mergen"
+    title: "mergen · " + root.s.version
     width: 580; height: 560
     minimumWidth: 560
     minimumHeight: tabs.currentIndex === 0 ? Math.max(440, Math.ceil(mainColumn.implicitHeight + root.footer.implicitHeight + 40)) : 520
@@ -113,6 +113,8 @@ ApplicationWindow {
     }
     component Select: ComboBox {
         id: select
+        opacity: enabled ? 1 : .48
+        onEnabledChanged: if (!enabled) popup.close()
         font.capitalization: Font.AllLowercase
         wheelEnabled: false
         Layout.fillWidth: true
@@ -307,6 +309,7 @@ ApplicationWindow {
                         Quiet { text: "Kaynak dil"; font.pixelSize: 13 }
                         Select {
                             objectName: "languageSelect"
+                            enabled: root.s.languageSelectable
                             model: ["Japonca · Manga", "Korece · Manhwa / Webtoon", "Çince Basit · Manhua", "Çince Geleneksel · Manhua", "İngilizce · Çizgi roman"]
                             currentIndex: ["ja","ko","zh","zh_tw","en"].indexOf(root.s.language)
                             onActivated: controller.setting("source_lang", ["ja","ko","zh","zh_tw","en"][currentIndex])
@@ -325,7 +328,7 @@ ApplicationWindow {
                 }
                 Toggle { text: "Kaydırmayı takip et"; checked: root.s.scrollTracking; onClicked: controller.setting("scroll_tracking",checked) }
                 RowLayout {
-                    Quiet { text: root.s.model === "600m" ? "NLLB 600M · Standart" : "NLLB 1.3B · Kaliteli" }
+                    Quiet { text: root.s.model === "600m" ? "nllb 600m · standart" : "nllb 1.3b · mergen bağlam v3" }
                     Label { text: ({cpu:"CPU",nvidia:"NVIDIA CUDA",amd:"AMD ROCm",intel:"Intel XPU"})[root.s.translationBackend] || "CPU"; color: root.muted; font.pixelSize: 12 }
                 }
                 Button {
@@ -412,8 +415,10 @@ ApplicationWindow {
                         Quiet { text: "manga-ocr çalışma ortamı"; visible: root.s.mangaEnabled }
                         Select { visible: root.s.mangaEnabled; model: ["cpu","nvidia cuda","amd rocm · deneysel","intel xpu · deneysel"]; currentIndex: ["cpu","nvidia","amd","intel"].indexOf(root.s.mangaBackend); onActivated: controller.setting("manga_backend",["cpu","nvidia","amd","intel"][currentIndex]) }
                         Quiet { text: "çeviri modeli" }
-                        Select { model: ["nllb 600m · standart","nllb 1.3b · kaliteli"]; currentIndex: root.s.model === "600m" ? 0 : 1; onActivated: controller.setting("translation_model",currentIndex === 0 ? "nllb-200-distilled-600M-ct2" : "nllb-200-distilled-1.3B-ct2") }
-                        Action { text: "seçili ortamları doğrula"; Layout.fillWidth: true; enabled: !root.s.busy; onClicked: controller.action("validate") }
+                        Select { model: ["nllb 600m · standart","nllb 1.3b · mergen bağlam v3"]; currentIndex: root.s.model === "600m" ? 0 : 1; onActivated: controller.setting("translation_model",currentIndex === 0 ? "nllb-200-distilled-600M-ct2" : "nllb-1.3b-baglam-v3") }
+                        Toggle { text: "oturum bağlamını kullan"; checked: root.s.contextEnabled; onClicked: controller.setting("session_context",checked) }
+                        Quiet { visible: root.s.model === "1300m"; text: "bağlam açıkken son üç replik kullanılır. bu sürümün uyarlama eğitimi ingilizce–türkçe için yapıldı." }
+                        Action { text: "seçili ortamları doğrula"; Layout.fillWidth: true; enabled: root.s.operationAvailable; onClicked: controller.action("validate") }
                         Quiet { text: root.s.validationSummary }
                         Repeater { model: root.s.validation; delegate: Quiet { required property var modelData; text: modelData.title + " · " + modelData.message + (modelData.result ? " · " + modelData.result : ""); color: modelData.status === "passed" ? root.fg : root.muted } }
                     }
@@ -446,7 +451,8 @@ ApplicationWindow {
                 width: parent.width; spacing: 12
                 Quiet { text: root.s.hardware }
                 Quiet { text: root.s.recommendation }
-                Action { text: "önerilen bileşenleri kur"; Layout.fillWidth: true; enabled: !root.s.busy; onClicked: controller.action("recommended") }
+                Action { text: "donanımı tara ve uygun kütüphaneleri kur"; Layout.fillWidth: true; enabled: root.s.operationAvailable; onClicked: controller.action("automatic-setup") }
+                Quiet { text: "gerekli çalışma kütüphaneleri internetten indirilir. ekran kartı kurulumu veya model testi geçmezse cpu ile devam edilir." }
                 Panel {
                     id: operationPanel
                     objectName: "operationPanel"
@@ -470,7 +476,7 @@ ApplicationWindow {
                                 onTextChanged: cursorPosition = text.length
                             }
                         }
-                        Action { text: "seçili ortamları doğrula"; Layout.fillWidth: true; enabled: !root.s.busy; onClicked: controller.action("validate") }
+                        Action { text: "seçili ortamları doğrula"; Layout.fillWidth: true; enabled: root.s.operationAvailable; onClicked: controller.action("validate") }
                     }
                 }
                 Repeater {
@@ -484,8 +490,8 @@ ApplicationWindow {
                             Quiet { text: modelData.key === root.s.activeComponent && root.s.busy ? "işlem sürüyor…" : modelData.ready ? "kurulu" : modelData.present ? "kurulum tamamlanmamış · yeniden deneyebilirsin" : "kurulu değil" }
                             RowLayout {
                                 Layout.fillWidth: true
-                                Action { text: modelData.ready ? "onar" : "indir"; Layout.fillWidth: true; enabled: !root.s.busy; onClicked: controller.component("install",modelData.key) }
-                                Action { text: "kaldır"; Layout.fillWidth: true; enabled: modelData.present && !root.s.busy; onClicked: controller.component("remove",modelData.key) }
+                                Action { text: modelData.bundled ? "dosyaları doğrula" : modelData.ready ? "onar" : "indir"; Layout.fillWidth: true; enabled: root.s.operationAvailable; onClicked: controller.component("install",modelData.key) }
+                                Action { text: "kaldır"; Layout.fillWidth: true; enabled: modelData.present && root.s.operationAvailable; onClicked: controller.component("remove",modelData.key) }
                             }
                         }
                     }
@@ -503,14 +509,14 @@ ApplicationWindow {
                         Quiet { text: "yüklü sürüm: " + root.s.version }
                         Quiet { text: root.s.updates }
                         Toggle { text: "açılışta güncellemeleri kontrol et"; checked: root.s.checkUpdates; onClicked: controller.setting("check_updates",checked) }
-                        Action { text: "güncellemeleri kontrol et"; Layout.fillWidth: true; enabled: !root.s.busy; onClicked: controller.action("check-update") }
-                        Action { text: "güncelle ve yeniden başlat"; Layout.fillWidth: true; visible: root.s.updateAvailable; enabled: !root.s.busy; onClicked: controller.action("update") }
+                        Action { text: "güncellemeleri kontrol et"; Layout.fillWidth: true; enabled: root.s.operationAvailable; onClicked: controller.action("check-update") }
+                        Action { text: "güncelle ve yeniden başlat"; Layout.fillWidth: true; visible: root.s.updateAvailable; enabled: root.s.operationAvailable; onClicked: controller.action("update") }
                     }
                 }
                 Quiet { text: "yalnızca imzalı sürüm paketleri kurulur. ayarlar ve modeller güncellemede korunur." }
                 Action { text: "github · mergen"; Layout.fillWidth: true; onClicked: controller.action("github") }
                 Quiet { text: "uygulamayı kaldırdığında modellerin ve ayarların korunur." }
-                Action { text: "mergen uygulamasını kaldır"; Layout.fillWidth: true; enabled: root.s.canUninstall && !root.s.busy; onClicked: controller.action("uninstall") }
+                Action { text: "mergen uygulamasını kaldır"; Layout.fillWidth: true; enabled: root.s.canUninstall && root.s.operationAvailable; onClicked: controller.action("uninstall") }
             }
         }
     }

@@ -22,8 +22,8 @@ SETTINGS_VERSION = 7
 TARGET_NLLB = "tur_Latn"  # Hedef dil: Türkçe
 
 TRANSLATION_MODELS = {
-    "nllb-200-distilled-600M-ct2": "Standart — hızlı, 4 GB VRAM önerilir",
-    "nllb-200-distilled-1.3B-ct2": "Kaliteli — daha doğal, 6 GB+ VRAM önerilir",
+    "nllb-200-distilled-600M-ct2": "nllb 600m · standart",
+    "nllb-1.3b-baglam-v3": "nllb 1.3b · mergen bağlam v1",
 }
 
 LANGS: dict[str, dict] = {
@@ -159,6 +159,8 @@ class Settings:
             s.ocr_engine = 'auto'
         if s.manga_device not in ('auto', 'cuda', 'cpu'):
             s.manga_device = 'auto'
+        if s.translation_model in ('nllb-200-distilled-1.3B-ct2','nllb-200-distilled-1.3B-hf'):
+            s.translation_model = 'nllb-1.3b-baglam-v3'
         return s
 
     def save(self) -> None:
