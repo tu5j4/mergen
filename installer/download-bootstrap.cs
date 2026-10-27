@@ -12,6 +12,12 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Windows.Forms;
 
+[assembly: AssemblyTitle("mergen kurulumu")]
+[assembly: AssemblyProduct("mergen")]
+[assembly: AssemblyCompany("mergen contributors")]
+[assembly: AssemblyVersion("0.4.0.0")]
+[assembly: AssemblyFileVersion("0.4.0.0")]
+
 [DataContract] public class PackagePart {
     [DataMember] public string name;
     [DataMember] public string url;
