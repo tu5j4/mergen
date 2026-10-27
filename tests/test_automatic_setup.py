@@ -79,7 +79,9 @@ class PackedModelTests(unittest.TestCase):
     def test_round_trip_including_odd_lengths_and_multiple_streams(self):
         for width in (2,4):
             with tempfile.TemporaryDirectory() as folder:
-                root=Path(folder);src=root/'original';data=bytes(range(251))*55+b'!'
+                # Match the installer entry point, which resolves its data root.
+                # GitHub's Windows TEMP may otherwise use a RUNNER~1 alias.
+                root=Path(folder).resolve();src=root/'original';data=bytes(range(251))*55+b'!'
                 src.write_bytes(data);archive=root/'model-archives/test.xz';archive.parent.mkdir()
                 hashed=pack(src,archive,width,workers=2,chunk=512)
                 row=dict(path='models/weights.bin',archive='test.xz',width=width,chunk=512,bytes=len(data),sha256=hashed,
@@ -90,7 +92,7 @@ class PackedModelTests(unittest.TestCase):
 
     def test_bad_output_hash_preserves_existing_weights(self):
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder);src=root/'original';src.write_bytes(b'new model data')
+            root=Path(folder).resolve();src=root/'original';src.write_bytes(b'new model data')
             archive=root/'model-archives/test.xz';archive.parent.mkdir();pack(src,archive,4,workers=1,chunk=8)
             row=dict(path='models/weights.bin',archive='test.xz',width=4,chunk=8,bytes=src.stat().st_size,sha256='0'*64,
                 archive_bytes=archive.stat().st_size,archive_sha256=hashlib.sha256(archive.read_bytes()).hexdigest())
