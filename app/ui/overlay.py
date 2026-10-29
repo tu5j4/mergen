@@ -37,6 +37,7 @@ class OverlayWindow(QWidget):
         self._excluded = False
         self._platform_done = False
         self._show_region_border = False
+        self._scroll_layout = None
 
     # ------------------------------------------------------------------
     def ensure_platform_setup(self) -> None:
@@ -63,6 +64,10 @@ class OverlayWindow(QWidget):
     # ------------------------------------------------------------------
     @Slot(list)
     def set_blocks(self, blocks: list[dict]) -> None:
+        if self._try_scroll_layout(blocks):
+            self._blocks = blocks
+            self.update()
+            return
         self._blocks = blocks
         self._relayout()
         self.update()
@@ -71,11 +76,13 @@ class OverlayWindow(QWidget):
     def clear_blocks(self) -> None:
         self._blocks = []
         self._layout = []
+        self._scroll_layout = None
         self.capture_areas_changed.emit([])
         self.update()
 
     def refresh_style(self) -> None:
         self._font_cache.clear()
+        self._scroll_layout = None
         self._relayout()
         self.update()
 
@@ -114,6 +121,35 @@ class OverlayWindow(QWidget):
             f = self._fit_font(text, rect, compact)
             self._font_cache[key] = f
         return f
+
+    def _layout_key(self, blocks):
+        style = (self.width(), self.height(), self.s.box_padding, self.s.overlay_opacity,
+                 self.s.font_family, self.s.font_bold, self.s.min_font_px,
+                 self.s.max_font_px, self.s.source_lang)
+        keys = [(b['y'], (b['x'], b['w'], b['h'], b['text'],
+                         tuple(b.get('bg', (255, 255, 255))), bool(b.get('vertical')),
+                         b.get('source_lang', self.s.source_lang))) for b in blocks]
+        return style, keys
+
+    def _try_scroll_layout(self, blocks) -> bool:
+        cached = self._scroll_layout
+        if not cached or not blocks or len(self._layout) != len(blocks):
+            return False
+        style, keys = self._layout_key(blocks)
+        previous_style, previous = cached
+        if style != previous_style or len(keys) != len(previous):
+            return False
+        dy = keys[0][0] - previous[0][0]
+        if any(key != old_key or y - old_y != dy for (y, key), (old_y, old_key) in zip(keys, previous)):
+            return False
+        translated = [(rect.translated(0, dy), *rest) for rect, *rest in self._layout]
+        if any(rect.bottom() < 0 or rect.top() > self.height() for rect, *_ in translated):
+            return False
+        self._layout = translated
+        self._scroll_layout = (style, keys)
+        self.capture_areas_changed.emit([
+            (r.x()-2,r.y()-2,r.width()+4,r.height()+4) for r,*_ in self._layout])
+        return True
 
     def _relayout(self) -> None:
         self._layout = []
@@ -176,6 +212,7 @@ class OverlayWindow(QWidget):
             inner = rect.adjusted(3, 2, -3, -2)
             font = self._cached_font(b["text"], inner, compact)
             self._layout.append((rect, b["text"], font, bg, fg))
+        self._scroll_layout = self._layout_key(self._blocks)
         self.capture_areas_changed.emit([
             (r.x()-2,r.y()-2,r.width()+4,r.height()+4) for r,*_ in self._layout])
 

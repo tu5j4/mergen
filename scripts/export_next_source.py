@@ -13,16 +13,23 @@ FILES = ('AGENTS.md', 'main.py', 'next_main.py', 'baslat.bat', 'kurulum.bat',
          'requirements.txt', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
          '.gitignore', '.gitattributes')
 SKIP = {'install_test_cpu.py', 'verify_local_models.py', 'diagnose_bundle.py', 'publish_local_copy.ps1'}
+PUBLIC_SKIP = {'analyze_subtitles.py', 'benchmark_context.py', 'preview_design.py',
+               'prepare_sandbox_context.py', 'sandbox_context.ps1', 'smoke_qml.py',
+               'test_controller_jobs.py', 'manga-test.png'}
 SECRET = re.compile(rb'-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|hf_[A-Za-z0-9]{24,}')
 PERSONAL = re.compile(rb'[A-Za-z]:[\\/]Users[\\/][^\\/\r\n]+', re.I)
 
 
-def source_files(source=ROOT):
+def source_files(source=ROOT, include_tests=True):
     source = Path(source).resolve()
     paths = [source / name for name in FILES]
     for folder, extensions in TREES.items():
+        if not include_tests and folder == 'tests':
+            continue
         paths += [p for p in (source / folder).rglob('*') if p.is_file()
-                  and p.suffix in extensions and '__pycache__' not in p.parts and p.name not in SKIP]
+                  and p.suffix in extensions and '__pycache__' not in p.parts and p.name not in SKIP
+                  and (include_tests or (p.name not in PUBLIC_SKIP
+                       and (folder != 'docs' or p.name in {'kurulum.md', 'derleme.md'})))]
     for path in paths:
         if not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(source):
             raise ValueError('missing or unsafe source: ' + str(path.relative_to(source)))
@@ -42,12 +49,12 @@ def source_files(source=ROOT):
     return sorted(set(paths))
 
 
-def export(output, source=ROOT):
+def export(output, source=ROOT, include_tests=True):
     source = Path(source).resolve()
     output = Path(output).absolute()
     if output.exists() or source.is_relative_to(output.resolve()):
         raise ValueError('choose a new export directory')
-    paths = source_files(source)  # Validate everything before writing any output.
+    paths = source_files(source, include_tests=include_tests)  # Validate before writing.
     manifest = []
     for path in paths:
         relative = path.relative_to(source)
@@ -62,4 +69,6 @@ def export(output, source=ROOT):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('output', type=Path)
-    export(parser.parse_args().output)
+    parser.add_argument('--exclude-tests', action='store_true')
+    args = parser.parse_args()
+    export(args.output, include_tests=not args.exclude_tests)

@@ -9,6 +9,7 @@ import sys
 ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
 from installer.catalog import OCR_NAMES
+from app.storage import VERSION
 
 
 def digest(path):
@@ -58,13 +59,13 @@ def prepare(output, installed, context, downloads):
                     if original!=hashed:raise ValueError('weights changed while copying')
                     original_weights.append(dict(component=key,path=target.relative_to(output).as_posix(),sha256=original))
         components[key]=rows
-    manifest=dict(schema=1,release='0.4.0',translation_versions={'600m':'original-standard','1300m':'mergen-context-v3-step1200'},
+    manifest=dict(schema=1,release=VERSION,translation_versions={'600m':'original-standard','1300m':'mergen-context-v1'},
         ocr_sources=json.loads((downloads/'sources.json').read_text(encoding='utf-8')),components=components)
     (ROOT/'assets/bundled-models.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     for key,trees in mappings.items():
         parents={output/relative for _,relative in trees}
         if key=='1300m':parents={output/'models/nllb-1.3b-baglam-v3'}
-        for parent in parents:(parent/'mergen-ready.json').write_text(json.dumps(dict(complete=True,release='0.4.0',component=key)),encoding='utf-8')
+        for parent in parents:(parent/'mergen-ready.json').write_text(json.dumps(dict(complete=True,release=VERSION,component=key)),encoding='utf-8')
     (output/'original-weights.json').write_text(json.dumps(original_weights,indent=2)+'\n',encoding='utf-8')
     print(json.dumps(dict(files=sum(map(len,components.values())),bytes=sum(r['bytes'] for rows in components.values() for r in rows))))
 

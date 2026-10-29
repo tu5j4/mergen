@@ -8,6 +8,10 @@ mergen; **manga, manhwa, manhua, webtoon ve çizgi romanları türkçe okumayı 
 
 okuduğun siteyi veya görüntüleyiciyi değiştirmeden, sayfaları tek tek dışa aktarmadan okumaya devam edebilirsin. çeviri katmanı tıklamalarını engellemez; sayfayı kaydırırken çeviri alanı takip edilir. kurulum paketi ve çalışma kütüphaneleri hazırlandıktan sonra metin tanıma ve çeviri bilgisayarında çalışır.
 
+## v0.5.0
+
+daha akıcı kaydırma takibi, hazır çevirilerin gecikmeden gösterilmesi ve daha hızlı yerel ocr aktarımı. mevcut çeviri modelleri ve bağlam korunur.
+
 ## neler sunar?
 
 - japonca manga, korece manhwa ve webtoon, çince manhua ve ingilizce çizgi romanlar için türkçe çeviri.
@@ -33,7 +37,7 @@ mergen iki aşamada çalışır: **önce görseldeki yazıyı okur, ardından ok
 ## kurulum ve kullanım
 
 1. [güncel kurulum paketini releases bölümünden indir](https://github.com/tu5j4/mergen/releases/latest) ve uygulamayı kur.
-2. `mergen-setup-0.4.0.exe` dosyasını çalıştır. başlatıcı yaklaşık 4,16 gb kurulum verisini indirip dosya özetlerini doğrular ve kurulumu açar. standart 600m, bağlamlı 1.3b, mobil paddleocr, korece ocr ve japonca manga-ocr bu sabit paketten kurulur. kurulum sonrası donanım taranır; uygun çalışma kütüphaneleri uygulama içinden kurulur. gpu kurulumu veya gerçek model testi geçmezse cpu ile devam edilir. aynı işlem **modeller** sayfasındaki **donanımı tara ve uygun kütüphaneleri kur** düğmesinden başlatılabilir.
+2. `mergen-setup-0.5.0.exe` dosyasını çalıştır. başlatıcı yaklaşık 4,16 gb kurulum verisini indirip dosya özetlerini doğrular ve kurulumu açar. standart 600m, bağlamlı 1.3b, mobil paddleocr, korece ocr ve japonca manga-ocr bu sabit paketten kurulur. kurulum sonrası donanım taranır; uygun çalışma kütüphaneleri uygulama içinden kurulur. gpu kurulumu veya gerçek model testi geçmezse cpu ile devam edilir. aynı işlem **modeller** sayfasındaki **donanımı tara ve uygun kütüphaneleri kur** düğmesinden başlatılabilir.
 3. kaynak dili seç; **bölge seç** ile okuma alanını işaretle veya **tüm ekran** seçeneğini kullan.
 4. **çeviriyi başlat** düğmesine bas ve okumaya devam et. gerekirse **şimdi çevir** ile yeniden dene.
 

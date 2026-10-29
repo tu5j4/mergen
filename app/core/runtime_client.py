@@ -52,6 +52,7 @@ class RuntimeClient:
             threading.Thread(target=self._read,args=(self._process,),daemon=True).start()
             ready = self._receive(timeout=startup_timeout)
             self.device = ready['device']
+            self._shared_images = os.name == 'nt' and ready.get('image_transport') == 'shared_memory_v1'
         except Exception:
             self.close()
             raise
@@ -100,10 +101,34 @@ class RuntimeClient:
         if not isinstance(image, Image.Image):
             image = Image.fromarray(image)
         buffer = io.BytesIO()
-        image.save(buffer, format='PNG')
+        image.save(buffer, format='PNG', compress_level=1)
+        # Preserve the previous payload size near the 24 MB base64 RPC limit.
+        if buffer.tell() > 18_000_000:
+            buffer = io.BytesIO()
+            image.save(buffer, format='PNG')
         return base64.b64encode(buffer.getvalue()).decode('ascii')
 
     def predict(self, rgb):
+        if getattr(self, '_shared_images', False):
+            import numpy as np
+            from multiprocessing import shared_memory
+            from uuid import uuid4
+            image = np.asarray(rgb)
+            if (image.dtype == np.uint8 and image.ndim == 3 and image.shape[2] == 3
+                    and 0 < image.shape[0] * image.shape[1] <= 16_000_000):
+                try:
+                    memory = shared_memory.SharedMemory(name='mergen_' + uuid4().hex, create=True, size=image.nbytes)
+                except (OSError, MemoryError):
+                    memory = None
+                if memory is not None:
+                    try:
+                        np.ndarray(image.shape, dtype=np.uint8, buffer=memory.buf)[:] = image
+                        result = self.request(op='ocr', image_shm={'name':memory.name, 'shape':list(image.shape)})
+                    finally:
+                        memory.close()
+                        memory.unlink()
+                    yield result
+                    return
         yield self.request(op='ocr', image=self.encode_image(rgb))
 
     def recognize(self, crops):

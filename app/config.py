@@ -17,7 +17,7 @@ PROJECT_ROOT = APP_ROOT
 APP_ICON = PROJECT_ROOT / 'assets' / ('mergen.ico' if sys.platform == 'win32' else 'mergen-logo.png')
 SETTINGS_FILE = DATA_ROOT / "settings.json"
 MODELS_DIR = DATA_ROOT / "models"
-SETTINGS_VERSION = 7
+SETTINGS_VERSION = 8
 
 TARGET_NLLB = "tur_Latn"  # Hedef dil: Türkçe
 
@@ -55,7 +55,7 @@ class Settings:
     speed_preset: str = "balanced"
 
     # Takip
-    poll_ms: int = 60               # ekran ne sıklıkla kontrol edilsin (kaydırma takibi)
+    poll_ms: int = 30               # ekran ne sıklıkla kontrol edilsin (kaydırma takibi)
     settle_ms: int = 220            # kaydırma durduktan kaç ms sonra OCR başlasın
     change_threshold: float = 3.0   # sayfa değişti mi eşiği (0-255 ortalama fark)
     scroll_tracking: bool = True    # kaydırmayı takip et, çeviriyi kaydır, sadece yeni kısmı oku
@@ -148,6 +148,8 @@ class Settings:
                 s.ocr_engine = "auto"
             if old_version < 6:
                 s.paddle_mobile = True
+            if old_version < 8 and s.poll_ms == 60:
+                s.poll_ms = 30
         if not s.usage_preferences_set:
             s.show_gpu_usage = s.show_vram_usage = s.show_cpu_usage = False
         s.panel_theme = {"glass_dark": "green", "glass_light": "white"}.get(s.panel_theme, s.panel_theme)

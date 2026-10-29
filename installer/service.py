@@ -227,7 +227,7 @@ def validate(settings, emit=print):
                     if sample.replace(' ','') not in text:raise RuntimeError('ocr örnek metni doğru okuyamadı: '+text)
                     row['result']=' '.join(output['rec_texts'])[:120]
                 else:
-                    with Image.open(APP_ROOT/'assets/manga-test.png') as sample:
+                    with Image.open(APP_ROOT/'assets/manga-sample.png') as sample:
                         output=client.recognize([sample])
                     if not output or not re.search('[\u3040-\u30ff\u4e00-\u9fff]',output[0]):
                         raise RuntimeError('manga-ocr japonca örneği okuyamadı')

@@ -133,6 +133,7 @@ class TranslationWorker(QObject):
         self._job_full_retry = False
         self._retry_full_viewport = False
         self._partials: queue.Queue = queue.Queue()
+        self._partial_ready = threading.Event()
         self._gen = 0
 
         self._H, self._sx, self._sy = 1, 1.0, 1.0
@@ -168,6 +169,7 @@ class TranslationWorker(QObject):
             self._active = False
         self._gen += 1
         self._hide_ack.set()
+        self._partial_ready.set()
 
     def ack_hidden(self) -> None:
         self._hide_ack.set()
@@ -289,13 +291,16 @@ class TranslationWorker(QObject):
     def _grab(self, capturer: ScreenCapturer, region: tuple) -> np.ndarray | None:
         x, y, w, h = region[:4]
         need_hide = (not self._overlay_excluded) and self._overlay_has_content and self.s.overlay_visible
+        self._capture_requires_hide = need_hide
         if need_hide and self._overlay_handle and len(region)>=6:
             with self._lock:areas=list(self._overlay_areas)
             if areas:
                 sx,sy=w/max(1,region[4]),h/max(1,region[5])
                 physical=[(a*sx,b*sy,c*sx,d*sy) for a,b,c,d in areas]
                 image=capturer.grab_under_overlay(x,y,w,h,self._overlay_handle,physical)
-                if image is not None:return image
+                if image is not None:
+                    self._capture_requires_hide = False
+                    return image
         if need_hide:
             self._hide_ack.clear()
             self.hide_request.emit(True)
@@ -309,6 +314,12 @@ class TranslationWorker(QObject):
         finally:
             if need_hide:
                 self.hide_request.emit(False)
+
+    def _poll_interval_ms(self) -> int:
+        interval = max(20, int(self.s.poll_ms))
+        if getattr(self, '_capture_requires_hide', not self._overlay_excluded):
+            return max(400, interval)
+        return interval
 
     # ------------------ OCR işi (ayrı thread) ------------------
     def _ocr_job(self, crop: np.ndarray, top: int, gen: int, lang: str, beam: int,
@@ -408,6 +419,7 @@ class TranslationWorker(QObject):
                 diagnostic["translated"] = n
                 if items:
                     self._partials.put((gen, items))
+                    self._partial_ready.set()
                 if gen != self._gen:
                     return gen, None, None
 
@@ -452,6 +464,16 @@ class TranslationWorker(QObject):
             self.content_blocks = self.content_blocks[-MAX_BLOCKS:]
         if changed:
             self._emit_visible()
+
+    def _wait_for_next_frame(self, seconds: float) -> None:
+        # Deliver completed translations while preserving the next capture deadline.
+        deadline = time.monotonic() + seconds
+        while self._running:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not self._partial_ready.wait(remaining):
+                return
+            self._partial_ready.clear()
+            self._drain_partials()
 
     def _check_job(self) -> None:
         if self._job is None or not self._job.done():
@@ -631,9 +653,9 @@ class TranslationWorker(QObject):
                 elif (now - last_motion) * 1000 >= self.s.settle_ms:
                     self._maybe_submit(img, lang, False)
 
-                poll = self.s.poll_ms if self._overlay_excluded else max(400, self.s.poll_ms)
+                poll = self._poll_interval_ms()
                 elapsed = time.perf_counter() - loop_start
-                time.sleep(max(0.005, poll / 1000 - elapsed))
+                self._wait_for_next_frame(max(0.005, poll / 1000 - elapsed))
 
             except Exception as e:
                 traceback.print_exc()
