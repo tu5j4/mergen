@@ -1,4 +1,4 @@
-# mergen · hikâyenin diline takılma
+﻿# mergen · hikâyenin diline takılma
 
 <p align="center">
   <img src="assets/mergen-logo.png" alt="mergen logosu" width="180">
@@ -8,9 +8,9 @@ mergen; **manga, manhwa, manhua, webtoon ve çizgi romanları türkçe okumayı 
 
 okuduğun siteyi veya görüntüleyiciyi değiştirmeden, sayfaları tek tek dışa aktarmadan okumaya devam edebilirsin. çeviri katmanı tıklamalarını engellemez; sayfayı kaydırırken çeviri alanı takip edilir. kurulum paketi ve çalışma kütüphaneleri hazırlandıktan sonra metin tanıma ve çeviri bilgisayarında çalışır.
 
-## v0.5.0
+## v0.5.1
 
-daha akıcı kaydırma takibi, hazır çevirilerin gecikmeden gösterilmesi ve daha hızlı yerel ocr aktarımı. mevcut çeviri modelleri ve bağlam korunur.
+adaptif ekran kontrolü ve rust kutu hesapları ana sürümdedir. kaydırma takibi, bağlamlı çeviride tamamlanma kontrolü ve kaynak kurulumunda sabit modellerin hazırlanması düzeltildi.
 
 ## neler sunar?
 
@@ -37,7 +37,7 @@ mergen iki aşamada çalışır: **önce görseldeki yazıyı okur, ardından ok
 ## kurulum ve kullanım
 
 1. [güncel kurulum paketini releases bölümünden indir](https://github.com/tu5j4/mergen/releases/latest) ve uygulamayı kur.
-2. `mergen-setup-0.5.0.exe` dosyasını çalıştır. başlatıcı yaklaşık 4,16 gb kurulum verisini indirip dosya özetlerini doğrular ve kurulumu açar. standart 600m, bağlamlı 1.3b, mobil paddleocr, korece ocr ve japonca manga-ocr bu sabit paketten kurulur. kurulum sonrası donanım taranır; uygun çalışma kütüphaneleri uygulama içinden kurulur. gpu kurulumu veya gerçek model testi geçmezse cpu ile devam edilir. aynı işlem **modeller** sayfasındaki **donanımı tara ve uygun kütüphaneleri kur** düğmesinden başlatılabilir.
+2. `mergen-setup-0.5.1.exe` dosyasını çalıştır. başlatıcı yaklaşık 4,16 gb kurulum verisini indirip dosya özetlerini doğrular ve kurulumu açar. standart 600m, bağlamlı 1.3b, mobil paddleocr, korece ocr ve japonca manga-ocr bu sabit paketten kurulur. kurulum sonrası donanım taranır; uygun çalışma kütüphaneleri uygulama içinden kurulur. gpu kurulumu veya gerçek model testi geçmezse cpu ile devam edilir. aynı işlem **modeller** sayfasındaki **donanımı tara ve uygun kütüphaneleri kur** düğmesinden başlatılabilir.
 3. kaynak dili seç; **bölge seç** ile okuma alanını işaretle veya **tüm ekran** seçeneğini kullan.
 4. **çeviriyi başlat** düğmesine bas ve okumaya devam et. gerekirse **şimdi çevir** ile yeniden dene.
 
@@ -51,6 +51,6 @@ windows 10/11 x64, avx destekli işlemci ve kurulum sırasında geçici dosyalar
 
 ## kaynak kod ve lisans
 
-kaynak koddan çalıştırmak için `kurulum.bat`, ardından `baslat.bat` dosyasını kullan. kurulum, bu sürümün sabit modellerini önce yerel tam kurulumdan doğrulayıp kaynak `.data` klasörüne kopyalar; eksikler varsa sha256 ile sabitlenmiş resmi 0.5.0 başlatıcısını indirip model paketini otomatik kurar. kaynak modelleri zaten doğruysa tam kurulum tekrar çalıştırılmaz. python ve arayüz ortamları uygulamaya özeldir; sistem python’u ve ekran kartı sürücüleri değiştirilmez. ayrıntılar: [kurulum](docs/kurulum.md) · [derleme](docs/derleme.md).
+kaynak koddan çalıştırmak için `kurulum.bat`, ardından `baslat.bat` dosyasını kullan. kurulum, bu sürümün sabit modellerini önce yerel tam kurulumdan doğrulayıp kaynak `.data` klasörüne kopyalar; eksikler varsa kaynak uygulamayla aynı sürümün imzalı bildirimini doğrulayıp bildirimin boyut ve sha256 ile tanımladığı resmi kurulumu otomatik çalıştırır. kaynak modelleri zaten doğruysa tam kurulum tekrar çalıştırılmaz. python ve arayüz ortamları uygulamaya özeldir; sistem python’u ve ekran kartı sürücüleri değiştirilmez. ayrıntılar: [kurulum](docs/kurulum.md) · [derleme](docs/derleme.md).
 
 uygulama kodu mit lisanslıdır. nllb modelleri cc-by-nc 4.0 lisansıyla ticari olmayan kullanım içindir. diğer modeller ve kütüphaneler için [üçüncü taraf bildirimlerine](THIRD_PARTY_NOTICES.md) bakabilirsin.

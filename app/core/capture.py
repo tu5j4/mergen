@@ -90,41 +90,52 @@ def estimate_vshift(prev_gray: np.ndarray, cur_gray: np.ndarray,
     row_tex = np.abs(np.diff(psf, axis=1)).mean(axis=1)
     csum = np.concatenate([[0.0], np.cumsum(row_tex)])
     win = csum[band_h:] - csum[:-band_h]
-    y0 = int(np.argmax(win))
-    if win[y0] / band_h < 1.5:      # bembeyaz/düz alan -> güvenilmez
-        return None
+    def match_band(y0):
+        if win[y0] / band_h < 1.5:      # bembeyaz/düz alan -> güvenilmez
+            return None
 
-    tmpl = ps[y0:y0 + band_h]
-    res = cv2.matchTemplate(cs, tmpl, cv2.TM_CCOEFF_NORMED)
-    _, score, _, loc = cv2.minMaxLoc(res)
-    if not np.isfinite(score) or score < min_score:
-        return None
-    y1 = int(loc[1])
-    dys = y0 - y1
+        tmpl = ps[y0:y0 + band_h]
+        res = cv2.matchTemplate(cs, tmpl, cv2.TM_CCOEFF_NORMED)
+        _, score, _, loc = cv2.minMaxLoc(res)
+        if not np.isfinite(score) or score < min_score:
+            return None
+        y1 = int(loc[1])
+        dys = y0 - y1
 
-    # Doğrulama: örtüşen alan gerçekten aynı mı?
-    if dys > 0:
-        a, b = psf[dys:], csf[:sh - dys]
-    elif dys < 0:
-        a, b = psf[:sh + dys], csf[-dys:]
-    else:
-        a, b = psf, csf
-    if a.shape[0] < sh * 0.2 or float(np.mean(np.abs(a - b))) > diff_threshold * 4:
-        return None
-    if dys == 0:
-        return 0
+        # Doğrulama: örtüşen alan gerçekten aynı mı?
+        if dys > 0:
+            a, b = psf[dys:], csf[:sh - dys]
+        elif dys < 0:
+            a, b = psf[:sh + dys], csf[-dys:]
+        else:
+            a, b = psf, csf
+        if a.shape[0] < sh * 0.2 or float(np.mean(np.abs(a - b))) > diff_threshold * 4:
+            return None
+        if dys == 0:
+            return 0
 
-    # Tam çözünürlükte hassas düzeltme
-    fy0 = min(H - 8, int(round(y0 / s)))
-    fbh = min(max(8, int(round(band_h / s))), H - fy0)
-    guess = int(round(y1 / s))
-    r = int(np.ceil(1 / s)) + 2
-    lo, hi = max(0, guess - r), min(H - fbh, guess + r)
-    if hi >= lo:
-        region = cur_gray[lo:hi + fbh]
-        tmpl_f = prev_gray[fy0:fy0 + fbh]
-        res_f = cv2.matchTemplate(region, tmpl_f, cv2.TM_CCOEFF_NORMED)
-        _, sf, _, loc_f = cv2.minMaxLoc(res_f)
-        if np.isfinite(sf) and sf >= min_score:
-            return int(fy0 - (lo + loc_f[1]))
-    return int(round(dys / s))
+        # Tam çözünürlükte hassas düzeltme
+        fy0 = min(H - 8, int(round(y0 / s)))
+        fbh = min(max(8, int(round(band_h / s))), H - fy0)
+        guess = int(round(y1 / s))
+        r = int(np.ceil(1 / s)) + 2
+        lo, hi = max(0, guess - r), min(H - fbh, guess + r)
+        if hi >= lo:
+            region = cur_gray[lo:hi + fbh]
+            tmpl_f = prev_gray[fy0:fy0 + fbh]
+            res_f = cv2.matchTemplate(region, tmpl_f, cv2.TM_CCOEFF_NORMED)
+            _, sf, _, loc_f = cv2.minMaxLoc(res_f)
+            if np.isfinite(sf) and sf >= min_score:
+                return int(fy0 - (lo + loc_f[1]))
+        return int(round(dys / s))
+
+    # The strongest band may leave the viewport on a small scroll. Retry
+    # additional bands before treating the frame as a new page; every candidate
+    # must pass the same texture, correlation and full-overlap checks.
+    candidates = (int(np.argmax(win)), (sh - band_h) // 2,
+                  sh // 4, max(0, sh * 3 // 4 - band_h), 0, sh - band_h)
+    for y0 in dict.fromkeys(candidates):
+        shift = match_band(y0)
+        if shift is not None:
+            return shift
+    return None

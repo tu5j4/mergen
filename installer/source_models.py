@@ -1,4 +1,4 @@
-"""Provision only the fixed release models for a source checkout (stdlib only)."""
+"""Fixed model file operations use stdlib; online recovery lazily verifies signed metadata."""
 import argparse
 import hashlib
 import json
@@ -9,14 +9,14 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+import urllib.parse
 import uuid
 
 from installer.manager import owned_path
+from app.storage import VERSION, REPOSITORY
 
-RELEASE = '0.5.0'
-BOOTSTRAP_URL = 'https://github.com/tu5j4/mergen/releases/download/v0.5.0/mergen-setup-0.5.0.exe'
-BOOTSTRAP_BYTES = 56320
-BOOTSTRAP_SHA256 = '75b878ec96e1b01ed154f4361d63f88df8ecbfb4bcd99d7994bdd1b7cfb39127'
+# Model bytes intentionally remain the original fixed model package.
+MODEL_RELEASE = '0.5.0'
 INSTALL_ARGUMENTS = ('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-')
 BOOTSTRAP_SPACE = 20 * 1024**3
 COPY_RESERVE = 256 * 1024**2
@@ -33,7 +33,7 @@ def normal_root(value):
 
 def manifest_rows(path):
     data = json.loads(Path(path).read_text(encoding='utf-8'))
-    if data.get('schema') != 1 or data.get('release') != RELEASE:
+    if data.get('schema') != 1 or data.get('release') != MODEL_RELEASE:
         raise ValueError('kaynak model manifesti bu sürümle eşleşmiyor')
     rows = {}
     for component in data.get('components', {}).values():
@@ -93,21 +93,36 @@ def copy_verified(source, target, row):
         temporary.unlink(missing_ok=True)
 
 
-def download_bootstrap(target):
-    row = {'bytes': BOOTSTRAP_BYTES, 'sha256': BOOTSTRAP_SHA256}
+def bootstrap_descriptor():
+    # certifi/cryptography are required only for online recovery, after UI setup.
+    from app import updates
+    prefix = 'https://github.com/'+REPOSITORY+'/releases/download/v'+VERSION+'/'
+    envelope = updates.request_json(updates.trusted_url(prefix+'mergen-update.json'))
+    payload = updates.verify(envelope)
+    if payload['version'] != VERSION:
+        raise ValueError('kurulum bildirimi kaynak uygulama sürümüyle eşleşmiyor')
+    files = updates.package_files(payload)
+    release_directory = '/'+REPOSITORY+'/releases/download/v'+VERSION
+    if any(urllib.parse.urlsplit(row['url']).path.rsplit('/', 1)[0] != release_directory for row in files):
+        raise ValueError('kurulum dosyaları kaynak uygulama sürümüne ait değil')
+    return files
+
+
+def download_bootstrap(target, row):
+    from app import updates
     if matches(target, row):
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(target.name + '.download-' + uuid.uuid4().hex)
     try:
-        request = urllib.request.Request(BOOTSTRAP_URL, headers={'User-Agent': 'mergen-source-setup/'+RELEASE})
-        with urllib.request.urlopen(request, timeout=90) as response, temporary.open('xb') as out:
+        request = urllib.request.Request(updates.trusted_url(row['url']), headers={'User-Agent': 'mergen-source-setup/'+VERSION})
+        with urllib.request.urlopen(request, timeout=90, context=updates.tls_context()) as response, temporary.open('xb') as out:
             if not response.geturl().startswith('https://'):
                 raise RuntimeError('kurulum indirmesi güvenli bağlantı kullanmıyor')
             size = 0
             while block := response.read(64 * 1024):
                 size += len(block)
-                if size > BOOTSTRAP_BYTES:
+                if size > row['bytes']:
                     raise RuntimeError('kurulum başlatıcısı beklenenden büyük')
                 out.write(block)
         if not matches(temporary, row):
@@ -140,10 +155,15 @@ def provision(target_root, installed_root, manifest, emit=print):
         # Reserve the installer/parts/archive peak plus the source copy if on one volume.
         same_volume = target.anchor.casefold() == installed.anchor.casefold()
         ensure_space(installed, BOOTSTRAP_SPACE + (copy_bytes if same_volume else 0))
-        installer = owned_path(target, 'downloads/mergen-setup-'+RELEASE+'.exe')
-        emit('sabit modeller eksik; doğrulanan resmi sürüm kurulumu hazırlanıyor')
-        download_bootstrap(installer)
-        run_bootstrap(installer)
+        emit('sabit modeller eksik; bu uygulama sürümünün imzalı kurulum bildirimi doğrulanıyor')
+        files = bootstrap_descriptor()
+        installers = []
+        for row in files:
+            name = urllib.parse.urlsplit(row['url']).path.rsplit('/', 1)[-1]
+            installer = owned_path(target, 'downloads/'+VERSION+'/'+name)
+            download_bootstrap(installer, row)
+            installers.append(installer)
+        run_bootstrap(installers[0])
         # The published bootstrap may exit zero after cancel/error: never trust exit alone.
         if missing(installed, needed):
             raise RuntimeError('resmi kurulumdan sonra sabit modeller doğrulanamadı; kaynak kurulumu tamamlanmadı')

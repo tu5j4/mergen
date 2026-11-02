@@ -29,6 +29,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 from ..config import LANGS, PROJECT_ROOT, Settings
 from .capture import ScreenCapturer, estimate_vshift, frame_diff, thumbnail_gray, to_gray
 from .session_context import SessionContext
+from .frame_metrics import AdaptivePoll, FrameMetrics
 
 EDGE_PX = 3          # kenara bu kadar yakın balonlar "yarım" sayılır
 STRIP_MARGIN = 48    # yeni şerit okunurken önceki alana taşma payı (px)
@@ -137,6 +138,9 @@ class TranslationWorker(QObject):
         self._gen = 0
 
         self._H, self._sx, self._sy = 1, 1.0, 1.0
+        self._poll_policy = AdaptivePoll()
+        self._frame_metrics = FrameMetrics()
+        self._dispatch_started = None
         self._reset_state_vars()
 
     # ------------------ thread-safe API ------------------
@@ -213,6 +217,9 @@ class TranslationWorker(QObject):
             pass
 
     def _reset_content(self) -> None:
+        self._poll_policy.reset()
+        self._dispatch_started = None
+        self._frame_metrics.counts["resets"] += 1
         self._gen += 1                      # çalışan iş varsa sonuçları geçersiz
         self._reset_state_vars()
         self._emit_clear()
@@ -222,7 +229,7 @@ class TranslationWorker(QObject):
             self._overlay_has_content = False
             self.clear_requested.emit()
 
-    def _emit_visible(self) -> None:
+    def _emit_visible(self, from_partial: bool = False) -> None:
         H, sx, sy = self._H, self._sx, self._sy
         out = []
         for b in self.content_blocks:
@@ -235,6 +242,9 @@ class TranslationWorker(QObject):
         if out:
             self._overlay_has_content = True
             self.blocks_ready.emit(out)
+            if from_partial and self._dispatch_started is not None and self._dispatch_started[0] == self._gen:
+                self._frame_metrics.add("job_first_dispatch_ms", (time.perf_counter() - self._dispatch_started[1]) * 1000)
+                self._dispatch_started = None
         else:
             self._emit_clear()
 
@@ -270,7 +280,7 @@ class TranslationWorker(QObject):
             f"OCR: {'GPU ✅' if ocr_on_gpu else 'CPU ⚠️'}{manga}   |   "
             f"Çeviri: {'GPU ✅' if self.translator.device.startswith(('cuda','xpu')) else 'CPU ⚠️'}"
         )
-        self.status.emit(f"Hazır: {LANGS[lang]['name']}")
+        self.status.emit("motorlar hazırlanıyor…")
         # Isınma: ilk çağrıdaki gecikmeyi kullanıcı hissetmesin
         try:
             dummy = np.full((64, 256, 3), 255, np.uint8)
@@ -278,6 +288,7 @@ class TranslationWorker(QObject):
             self.translator.translate(["ok"], LANGS[lang]["nllb"], beam_size=1)
         except Exception:
             pass
+        self.status.emit(f"hazır: {LANGS[lang]['name']}")
 
     def _wait_job(self, timeout: float = 30.0) -> None:
         if self._job is not None:
@@ -316,10 +327,8 @@ class TranslationWorker(QObject):
                 self.hide_request.emit(False)
 
     def _poll_interval_ms(self) -> int:
-        interval = max(20, int(self.s.poll_ms))
-        if getattr(self, '_capture_requires_hide', not self._overlay_excluded):
-            return max(400, interval)
-        return interval
+        return self._poll_policy.interval(self.s.poll_ms,
+            getattr(self, '_capture_requires_hide', not self._overlay_excluded))
 
     # ------------------ OCR işi (ayrı thread) ------------------
     def _ocr_job(self, crop: np.ndarray, top: int, gen: int, lang: str, beam: int,
@@ -439,7 +448,11 @@ class TranslationWorker(QObject):
         return gen, keep_top, keep_bottom
 
     def _drain_partials(self) -> None:
+        from .rust_bridge import rect_index
+        native=rect_index(self.content_blocks,getattr(self,'_rust_rectangles',None))
+        self._rust_rectangles=native
         changed = False
+        visible_partial = False
         while True:
             try:
                 gen, items = self._partials.get_nowait()
@@ -448,22 +461,30 @@ class TranslationWorker(QObject):
             if gen != self._gen:
                 continue
             for it in items:
-                overlaps = [e for e in self.content_blocks if _overlap_ratio(it, e) > 0.5]
+                indices=native.query(it) if native is not None else None
+                if indices is None:
+                    indices=[i for i,e in enumerate(self.content_blocks) if _overlap_ratio(it,e)>0.5]
+                overlaps=[self.content_blocks[i] for i in indices]
                 if overlaps:
                     # Never let a broad OCR box collapse neighboring passages.
                     if len(overlaps) != 1 or not _more_complete(it, overlaps[0]):
                         continue
-                    index = self.content_blocks.index(overlaps[0])
+                    index = indices[0]
                     self.content_blocks[index] = it
+                    if native is not None:native.replace(index,it)
                 else:
                     self.content_blocks.append(it)
+                    if native is not None:native.append(it)
                 if self._context_enabled:
                     self._session_context.remember(it['src'], it['text'], LANGS[it['source_lang']]['nllb'], panel=it.get('panel'))
                 changed = True
+                y = it["y"] - self.scroll_y
+                visible_partial = visible_partial or (y + it["h"] >= 0 and y <= self._H)
         if len(self.content_blocks) > MAX_BLOCKS:
             self.content_blocks = self.content_blocks[-MAX_BLOCKS:]
+            if native is not None:native.retain_tail(self.content_blocks)
         if changed:
-            self._emit_visible()
+            self._emit_visible(from_partial=visible_partial)
 
     def _wait_for_next_frame(self, seconds: float) -> None:
         # Deliver completed translations while preserving the next capture deadline.
@@ -548,6 +569,9 @@ class TranslationWorker(QObject):
         crop = np.ascontiguousarray(img[a - self.scroll_y:b - self.scroll_y])
         self.status.emit("Okunuyor…")
         context = self._session_context.fork() if self._context_enabled else None
+        self._dispatch_started = (self._gen, time.perf_counter())
+        self._frame_metrics.counts["ocr_jobs"] += 1
+        self._frame_metrics.counts["ocr_pixels"] += int(crop.shape[0] * crop.shape[1])
         self._job = self._executor.submit(self._ocr_job, crop, a, self._gen, lang,
                                           self.s.beam_size, context, vp)
 
@@ -601,6 +625,8 @@ class TranslationWorker(QObject):
                         self._reset_content()
                         was_active = False
                     prev_gray = None
+                    self._frame_metrics.previous_frame = None
+                    self._poll_policy.reset()
                     time.sleep(0.1)
                     continue
                 was_active = True
@@ -614,12 +640,20 @@ class TranslationWorker(QObject):
                     last_motion = time.monotonic()
 
                 loop_start = time.perf_counter()
+                self._frame_metrics.frame(loop_start)
+                capture_start = loop_start
                 img = self._grab(capturer, region)
+                self._frame_metrics.add("capture_ms", (time.perf_counter() - capture_start) * 1000)
                 if img is None:
+                    self._frame_metrics.counts["capture_failures"] += 1
                     time.sleep(0.2)
                     continue
+                self._frame_metrics.counts["captured_frames"] += 1
+                grayscale_start = time.perf_counter()
                 gray = to_gray(img)
                 th = thumbnail_gray(gray)
+                self._frame_metrics.add("grayscale_ms", (time.perf_counter() - grayscale_start) * 1000)
+                motion_start = time.perf_counter()
                 self._H = img.shape[0]
                 self._sx = img.shape[1] / max(1, region[4])
                 self._sy = img.shape[0] / max(1, region[5])
@@ -633,18 +667,22 @@ class TranslationWorker(QObject):
                         dy = (estimate_vshift(prev_gray, gray, self.s.change_threshold)
                               if self.s.scroll_tracking else None)
                         if dy:   # kaydırma -> çevirileri içerikle birlikte kaydır
+                            self._poll_policy.reset()
+                            self._frame_metrics.counts["scroll_frames"] += 1
                             self.scroll_y += dy
                             last_motion = now
                             self._emit_visible()
                         elif frame_diff(th, prev_th) > self.s.change_threshold:
                             self._reset_content()      # sayfa değişti
                             last_motion = now
+                self._frame_metrics.add("motion_ms", (time.perf_counter() - motion_start) * 1000)
                 prev_gray, prev_th = gray, th
 
                 self._drain_partials()
                 self._check_job()
 
                 if force:
+                    self._poll_policy.reset()
                     if self._job is None:
                         self._reset_content()
                         self._maybe_submit(img, lang, True)
@@ -654,6 +692,7 @@ class TranslationWorker(QObject):
                     self._maybe_submit(img, lang, False)
 
                 poll = self._poll_interval_ms()
+                self._frame_metrics.add("poll_target_ms", poll)
                 elapsed = time.perf_counter() - loop_start
                 self._wait_for_next_frame(max(0.005, poll / 1000 - elapsed))
 
@@ -662,6 +701,7 @@ class TranslationWorker(QObject):
                 self.status.emit(f"Hata: {e}")
                 time.sleep(1.0)
 
+        self._frame_metrics.write(PROJECT_ROOT / "logs" / "frame_metrics.json")
         if self._executor is not None:
             self._executor.shutdown(wait=True, cancel_futures=True)
         if self.translator is not None:

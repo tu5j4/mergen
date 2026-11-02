@@ -36,13 +36,16 @@ for name in ('torch','torchvision','peft','accelerate','paddle','paddleocr','pad
     args+=['--exclude-module',name]
 for folder in ('app','assets','installer','scripts'):
     for path in (ROOT/folder).rglob('*'):
+        if path.name in ('release_manifest.py','sign_release_local.py','create_release_key.py'):continue
         if path.is_file() and '__pycache__' not in path.parts and path.suffix in ('.py','.qml','.json','.png','.ico','.svg','.pem','.ps1','.txt'):
             args+=['--add-data',str(path)+os.pathsep+str(path.parent.relative_to(ROOT))]
+for native_root in ('app/core','runtime-source/app/core'):
+    args+=['--add-data',str(ROOT/'app/core/mergen_rust.dll')+os.pathsep+native_root]
 # Python 3.12 workers must never import bundled Python 3.11 extension modules.
 # Ship pure project sources under their own import root, separate from UI libraries.
 for folder in ('app','installer','scripts'):
     for path in (ROOT/folder).rglob('*'):
-        if path.is_file() and '__pycache__' not in path.parts and path.suffix in ('.py','.json','.txt') and path.name not in ('install_test_cpu.py','verify_local_models.py','diagnose_bundle.py'):
+        if path.is_file() and '__pycache__' not in path.parts and path.suffix in ('.py','.json','.txt') and path.name not in ('release_manifest.py','sign_release_local.py','create_release_key.py','install_test_cpu.py','verify_local_models.py','diagnose_bundle.py'):
             args+=['--add-data',str(path)+os.pathsep+str(Path('runtime-source')/path.parent.relative_to(ROOT))]
 for name in ('LICENSE','THIRD_PARTY_NOTICES.md'):
     args+=['--add-data',str(ROOT/name)+os.pathsep+'.']

@@ -46,7 +46,7 @@ def _ov(a1: int, a2: int, b1: int, b2: int) -> int:
     return max(0, min(a2, b2) - max(a1, b1))
 
 
-def group_boxes(boxes: list[Box], gap_ratio: float = 0.65,
+def _group_boxes_python(boxes: list[Box], gap_ratio: float = 0.65,
                 bubble_ids: list[int | None] | None = None,
                 panel_ids: list[int | None] | None = None,
                 same_bubble_gap_ratio: float | None = None,
@@ -122,6 +122,17 @@ def group_boxes(boxes: list[Box], gap_ratio: float = 0.65,
     for i in range(n):
         groups.setdefault(find(i), []).append(i)
     return list(groups.values())
+
+
+def group_boxes(boxes: list[Box], gap_ratio: float = 0.65,
+                bubble_ids: list[int | None] | None = None,
+                panel_ids: list[int | None] | None = None,
+                same_bubble_gap_ratio: float | None = None,
+                allow_short_bubble_columns: bool = False) -> list[list[int]]:
+    from .rust_bridge import group
+    result=group(boxes,gap_ratio,bubble_ids,panel_ids,same_bubble_gap_ratio,allow_short_bubble_columns)
+    if result is not None:return result
+    return _group_boxes_python(boxes,gap_ratio,bubble_ids,panel_ids,same_bubble_gap_ratio,allow_short_bubble_columns)
 
 
 def order_boxes(boxes: list[Box], allow_vertical_rtl: bool) -> list[Box]:

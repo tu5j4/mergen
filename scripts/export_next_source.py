@@ -6,13 +6,13 @@ import shutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TREES = {'app': {'.py', '.qml', '.json'}, 'assets': {'.png', '.ico', '.svg', '.pem', '.json'},
+TREES = {'app': {'.py', '.qml', '.json', '.dll', '.rs'}, 'assets': {'.png', '.ico', '.svg', '.pem', '.json'},
          'installer': {'.py', '.iss', '.ps1', '.txt', '.cs'}, 'scripts': {'.py', '.ps1'},
          'tests': {'.py'}, 'docs': {'.md'}, '.github': {'.yml', '.yaml'}}
 FILES = ('AGENTS.md', 'main.py', 'next_main.py', 'baslat.bat', 'kurulum.bat',
          'requirements.txt', 'README.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md',
          '.gitignore', '.gitattributes')
-SKIP = {'install_test_cpu.py', 'verify_local_models.py', 'diagnose_bundle.py', 'publish_local_copy.ps1'}
+SKIP = {'release_manifest.py','sign_release_local.py', 'create_release_key.py', 'install_test_cpu.py', 'verify_local_models.py', 'diagnose_bundle.py', 'publish_local_copy.ps1'}
 PUBLIC_SKIP = {'analyze_subtitles.py', 'benchmark_context.py', 'preview_design.py',
                'prepare_sandbox_context.py', 'sandbox_context.ps1', 'smoke_qml.py',
                'test_controller_jobs.py', 'manga-test.png'}

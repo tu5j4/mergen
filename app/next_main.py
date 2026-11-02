@@ -36,10 +36,14 @@ def main():
     if smoke:
         def finish():
             import json
+            from app.core import rust_bridge
+            from app.core.frame_metrics import AdaptivePoll
+            native = rust_bridge.require_native() if sys.platform == 'win32' else {'loaded': False}
             window=engine.rootObjects()[0]
             window.grabWindow().save(str(DATA_ROOT/'packaged-preview.png'))
             (DATA_ROOT/'smoke-result.json').write_text(json.dumps({'qml':True,'version':controller.state['version'],
-                'model_frameworks_loaded':[n for n in ('torch','paddle','transformers','ctranslate2') if n in sys.modules]}))
+                'model_frameworks_loaded':[n for n in ('torch','paddle','transformers','ctranslate2') if n in sys.modules],
+                'native':native,'adaptive_poll':AdaptivePoll().enabled}))
             controller.monitor.close();app.quit()
         if '--runtime-test' in sys.argv:
             from dataclasses import replace

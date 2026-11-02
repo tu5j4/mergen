@@ -1,4 +1,4 @@
-#define AppVersion "0.5.0"
+#define AppVersion "0.5.1"
 #ifndef ModelPayload
   #define ModelPayload "..\model-payload"
 #endif
@@ -55,7 +55,7 @@ var
 begin
   if CurStep = ssPostInstall then begin
     WizardForm.StatusLabel.Caption := 'paketteki model dosyaları hazırlanıyor ve doğrulanıyor';
-    Args := '"' + ExpandConstant('{app}\_internal\scripts\restore_packed_models.py') + '" --data-root "' + ExpandConstant('{localappdata}\mergen-next') + '" --manifest "' + ExpandConstant('{app}\_internal\assets\packed-models.json') + '"';
+    Args := '"' + ExpandConstant('{app}\_internal\scripts\restore_packed_models.py') + '" --data-root "' + ExpandConstant('{localappdata}\mergen-next') + '" --manifest "' + ExpandConstant('{app}\_internal\assets\packed-models.json') + '" --bundled-manifest "' + ExpandConstant('{app}\_internal\assets\bundled-models.json') + '"';
     if not Exec(ExpandConstant('{localappdata}\mergen-next\python\python.exe'), Args, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
       RaiseException('model dosyaları hazırlanamadı. kurulum paketini yeniden çalıştırın.');
     if ResultCode <> 0 then

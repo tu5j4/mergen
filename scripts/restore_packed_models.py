@@ -48,10 +48,23 @@ def restore(root,manifest,emit=print):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--data-root',type=Path,required=True);p.add_argument('--manifest',type=Path,required=True)
+    p.add_argument('--bundled-manifest',type=Path)
     a=p.parse_args();root=a.data_root.resolve();root.mkdir(parents=True,exist_ok=True)
     logs=root/'logs';logs.mkdir(exist_ok=True)
     with (logs/'model-restore.log').open('w',encoding='utf-8') as log:
-        try:restore(root,json.loads(a.manifest.read_text(encoding='utf-8')),lambda s:log.write(s+'\n'))
+        try:
+            restore(root,json.loads(a.manifest.read_text(encoding='utf-8')),lambda s:log.write(s+'\n'))
+            if a.bundled_manifest:
+                bundle=json.loads(a.bundled_manifest.read_text(encoding='utf-8'))
+                for rows in bundle['components'].values():
+                    for row in rows:
+                        target=owned_path(root,row['path'])
+                        if not target.is_file() or target.stat().st_size!=row['bytes']:
+                            raise ValueError('kurulum model dosyası eksik: '+row['path'])
+                        with target.open('rb') as stream:
+                            if hashlib.file_digest(stream,'sha256').hexdigest()!=row['sha256']:
+                                raise ValueError('kurulum model özeti eşleşmedi: '+row['path'])
+                log.write('tüm sabit model dosyaları doğrulandı\n')
         except Exception:
             import traceback
             log.write(traceback.format_exc());raise

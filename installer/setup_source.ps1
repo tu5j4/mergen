@@ -1,4 +1,4 @@
-param([switch]$Plan)
+﻿param([switch]$Plan)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $dataRoot = Join-Path $projectRoot '.data'
@@ -94,8 +94,6 @@ try {
         Move-Item -LiteralPath $extracted -Destination $runtimeRoot
     }
     Invoke-Checked $runtimePython @('-I', '-c', 'import sys,venv,ensurepip; assert sys.version_info[:2]==(3,12) and sys.maxsize>2**32')
-    Write-Host 'sabit surum modelleri kaynak veri klasorune hazirlaniyor...'
-    Invoke-Checked $runtimePython @('-m', 'installer.source_models', '--target-root', $dataRoot, '--manifest', (Join-Path $projectRoot 'assets\bundled-models.json'))
     if (-not (Test-Path -LiteralPath $guiPython)) {
         if (Test-Path -LiteralPath $venvRoot) { throw '.venv eksik veya bozuk. klasoru yedekleyip yeniden deneyin.' }
         Write-Host 'arayuz icin ayri python ortami olusturuluyor...'
@@ -106,7 +104,9 @@ try {
     Invoke-Checked $guiPython @('-m', 'pip', '--isolated', '--cache-dir', $env:PIP_CACHE_DIR, 'install', '--upgrade', 'pip')
     Invoke-Checked $guiPython @('-m', 'pip', '--isolated', '--cache-dir', $env:PIP_CACHE_DIR, 'install', '-r', (Join-Path $PSScriptRoot 'requirements-ui.txt'))
     Invoke-Checked $guiPython @('-m', 'pip', '--isolated', 'check')
-    Invoke-Checked $guiPython @('-c', 'import PySide6.QtQuick,cv2,numpy,PIL,psutil,mss,pynput,cryptography; print(''arayuz kutuphaneleri hazir'')')
+    Invoke-Checked $guiPython @('-c', 'import PySide6.QtQuick,cv2,numpy,PIL,psutil,mss,pynput,cryptography,certifi; print(''arayuz kutuphaneleri hazir'')')
+    Write-Host 'sabit surum modelleri kaynak veri klasorune hazirlaniyor...'
+    Invoke-Checked $guiPython @('-m', 'installer.source_models', '--target-root', $dataRoot, '--manifest', (Join-Path $projectRoot 'assets\bundled-models.json'))
     Write-Host 'guncel arayuz acilis testi calistiriliyor...'
     Invoke-Checked $guiPython @('-m', 'app.next_main', '--smoke-test')
     Write-Host 'kurulum tamamlandi. baslat.bat ile acabilirsiniz.'

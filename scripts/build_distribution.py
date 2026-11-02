@@ -1,4 +1,4 @@
-"""Create current developer and source-install packages without local data."""
+﻿"""Create current developer and source-install packages without local data."""
 import argparse
 import shutil
 import sys
