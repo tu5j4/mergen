@@ -210,8 +210,10 @@ class OverlayWindow(QWidget):
             bg = QColor(r, g, bl, alpha)
             fg = QColor(15, 15, 15) if lum > 128 else QColor(245, 245, 245)
             inner = rect.adjusted(3, 2, -3, -2)
-            font = self._cached_font(b["text"], inner, compact)
-            self._layout.append((rect, b["text"], font, bg, fg))
+            # Case is a display preference; preserve model/session/block text.
+            display_text = b["text"].replace("\u0130", "i").lower()
+            font = self._cached_font(display_text, inner, compact)
+            self._layout.append((rect, display_text, font, bg, fg))
         self._scroll_layout = self._layout_key(self._blocks)
         self.capture_areas_changed.emit([
             (r.x()-2,r.y()-2,r.width()+4,r.height()+4) for r,*_ in self._layout])
