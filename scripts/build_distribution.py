@@ -1,4 +1,4 @@
-﻿"""Create current developer and source-install packages without local data."""
+"""Create current developer and source-install packages without local data."""
 import argparse
 import shutil
 import sys
@@ -29,7 +29,9 @@ def build(output, source=ROOT):
             ('@echo off\r\ncall "%~dp0program\\' + name + '.bat" %*\r\n').encode('utf-8'))
     (output / 'kolay-kurulum/beni-oku.txt').write_text(
         'mergen\n\nilk kurulum: kurulum.bat\nacilis: baslat.bat\n'
-        'modeller ve cihaz kutuphaneleri uygulamanin modeller sayfasindan kurulur.\n'
+        'sabit surum modelleri kurulum.bat sirasinda hazirlanir ve dogrulanir.\n'
+        'eksik modeller icin resmi surum kurulumu otomatik acilir; internet ve bos alan gerekir.\n'
+        'cihaz kutuphaneleri uygulamanin modeller sayfasindan kurulur.\n'
         'exe kurulumu icin github releases sayfasindaki guncel paketi kullanin.\n', encoding='utf-8')
     return output
 

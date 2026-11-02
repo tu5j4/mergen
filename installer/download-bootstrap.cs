@@ -72,6 +72,7 @@ public class InstallerWindow : Form {
     HttpWebRequest request;
     Package package;
     string installerArguments;
+    public bool InstallSucceeded { get; private set; }
     public InstallerWindow(Package value, string arguments) {
         package = value;
         installerArguments = arguments;
@@ -144,6 +145,7 @@ public class InstallerWindow : Form {
                 UpdateStatus("doğrulanan kurulum açılıyor…", 100);
                 var start = new ProcessStartInfo(installer, installerArguments); start.UseShellExecute = true;
                 using (var process = Process.Start(start)) { process.WaitForExit(); if (process.ExitCode != 0) throw new IOException("kurulum tamamlanmadı; başlatıcıyı yeniden çalıştırabilirsin"); }
+                InstallSucceeded = true;
                 finished = true;
                 BeginInvoke((Action)delegate { Close(); });
             }
@@ -156,7 +158,7 @@ public class InstallerWindow : Form {
     }
 }
 public static class Program {
-    [STAThread] public static void Main(string[] args) {
+    [STAThread] public static int Main(string[] args) {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
         var forwarded = new List<string>();
         foreach (string arg in args) {
@@ -168,7 +170,10 @@ public static class Program {
         }
         using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("mergen.payload")) {
             var package = (Package)new DataContractJsonSerializer(typeof(Package)).ReadObject(stream);
-            Application.Run(new InstallerWindow(package, String.Join(" ", forwarded.ToArray())));
+            using (var window = new InstallerWindow(package, String.Join(" ", forwarded.ToArray()))) {
+                Application.Run(window);
+                return window.InstallSucceeded ? 0 : 1;
+            }
         }
     }
 }

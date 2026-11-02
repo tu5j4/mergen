@@ -9,3 +9,14 @@ kurulumun sonundaki uygulamayı açma seçeneği donanımı tarar ve uygun çal�
 varsayılan model standart 600m'dir. ayarlardan `nllb 1.3b · mergen bağlam v1` seçilebilir. uyarlama ingilizce–türkçe için eğitilmiştir; bağlam önceki en fazla üç kaynak repliği kullanır. kaynak dil çeviri açıkken değiştirilebilir. yeni dilin ocr motoru arka planda hazırlanırken çeviri bir süre bekleyebilir.
 
 uygulamayı kaldırmak model ve ayarları silmez. kaynak zip'i programı kullanmak için gerekli değildir. indirilip doğrulanmış asıl kurulum `%localappdata%/mergen-next/downloads/0.5.0` altında tutulur; yeniden başlatmada yeniden indirilmez.
+
+
+## kaynak zip veya github checkout kurulumu
+
+`kurulum.bat` dosyasını çalıştır, tamamlandığında `baslat.bat` ile aç. kaynak arayüzü kendi `.venv` ortamını, model ve çalışma verileri proje içindeki `.data` klasörünü kullanır. modellerin yalnız uygulama içinden yeniden indirileceği varsayılmaz: bu sürümün modelleri sabit sürüm paketine aittir.
+
+kaynak kurulumu önce `.data` içindeki model dosyalarının boyutlarını ve sha256 özetlerini denetler. eksik olanları `%localappdata%/mergen-next` altında aynı sürümün tam kurulumuyla sağlanmış modellerden doğrulayarak kopyalar. orada da eksik veya farklı dosyalar varsa, sürüm ve sha256 özeti sabitlenmiş resmi `mergen-setup-0.5.0.exe` başlatıcısını kaynak `.data/downloads` altında önbelleğe alıp otomatik çalıştırır. başlatıcı yaklaşık 4,16 gb sürüm paketini indirip doğrular; tam uygulamayı ve model verilerini geçerli kullanıcı için kurar. bu sessiz tam kurulumun sonunda ikinci bir uygulama penceresi açılmaz. sonra kaynak `.data` modelleri doğrulanmış kopyalarla tamamlanır.
+
+bu yolda hub üzerindeki değişken `main` ağırlıkları kullanılmaz. kaynak ve kurulu uygulama model kopyaları ayrı yer kaplar; kurulum başlamadan gerekli boş alan denetlenir. modeller doğrulanmadan kaynak kurulumu başarılı sayılmaz. kaynak modelleri zaten tam ve doğruysa resmi kurulum çalıştırılmaz ve modeller yeniden kopyalanmaz; indirilmiş doğru başlatıcı da yeniden indirilmez.
+
+sonrasında **modeller** sayfasından cpu veya ekran kartına uygun çalışma kütüphanelerini kur. `kurulum.bat` sistem python’unu ve ekran kartı sürücülerini değiştirmez. kaynak kurulum günlüğü `.data/logs/source-setup.log` dosyasındadır. `powershell -File installer/setup_source.ps1 -Plan` yalnız yapılacak işleri gösterir; indirme veya klasör oluşturma yapmaz.

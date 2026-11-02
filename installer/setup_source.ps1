@@ -1,4 +1,4 @@
-﻿param([switch]$Plan)
+param([switch]$Plan)
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $dataRoot = Join-Path $projectRoot '.data'
@@ -38,7 +38,7 @@ try {
     Assert-LocalPath $runtimeRoot
     Assert-LocalPath $venvRoot
     if ($Plan) {
-        Write-Output 'yalniz arayuz ortami kurulacak; modeller uygulama icinden indirilir.'
+        Write-Output 'arayuz ve sabit surum modelleri hazirlanacak; yerel modeller dogrulanir, eksikse resmi kurulum otomatik acilir.'
         Write-Output "python: $runtimeRoot"
         Write-Output "arayuz: $venvRoot"
         Write-Output "paketler: $(Join-Path $PSScriptRoot 'requirements-ui.txt')"
@@ -94,6 +94,8 @@ try {
         Move-Item -LiteralPath $extracted -Destination $runtimeRoot
     }
     Invoke-Checked $runtimePython @('-I', '-c', 'import sys,venv,ensurepip; assert sys.version_info[:2]==(3,12) and sys.maxsize>2**32')
+    Write-Host 'sabit surum modelleri kaynak veri klasorune hazirlaniyor...'
+    Invoke-Checked $runtimePython @('-m', 'installer.source_models', '--target-root', $dataRoot, '--manifest', (Join-Path $projectRoot 'assets\bundled-models.json'))
     if (-not (Test-Path -LiteralPath $guiPython)) {
         if (Test-Path -LiteralPath $venvRoot) { throw '.venv eksik veya bozuk. klasoru yedekleyip yeniden deneyin.' }
         Write-Host 'arayuz icin ayri python ortami olusturuluyor...'
@@ -108,7 +110,7 @@ try {
     Write-Host 'guncel arayuz acilis testi calistiriliyor...'
     Invoke-Checked $guiPython @('-m', 'app.next_main', '--smoke-test')
     Write-Host 'kurulum tamamlandi. baslat.bat ile acabilirsiniz.'
-    Write-Host 'cpu / nvidia / intel / amd kutuphanelerini ve modelleri uygulamanin modeller sayfasindan kurun.'
+    Write-Host 'sabit modeller dogrulandi. cpu / nvidia / intel / amd calisma kutuphanelerini uygulamanin modeller sayfasindan kurun.'
     exit 0
 } catch {
     Write-Host "hata: $_"

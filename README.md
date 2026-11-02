@@ -1,4 +1,4 @@
-﻿# mergen · hikâyenin diline takılma
+# mergen · hikâyenin diline takılma
 
 <p align="center">
   <img src="assets/mergen-logo.png" alt="mergen logosu" width="180">
@@ -51,6 +51,6 @@ windows 10/11 x64, avx destekli işlemci ve kurulum sırasında geçici dosyalar
 
 ## kaynak kod ve lisans
 
-kaynak koddan çalıştırmak için `kurulum.bat`, ardından `baslat.bat` dosyasını kullan. uygulama kendi python ortamını oluşturur; sistem python’unu ve ekran kartı sürücülerini değiştirmez. ayrıntılar: [kurulum](docs/kurulum.md) · [derleme](docs/derleme.md).
+kaynak koddan çalıştırmak için `kurulum.bat`, ardından `baslat.bat` dosyasını kullan. kurulum, bu sürümün sabit modellerini önce yerel tam kurulumdan doğrulayıp kaynak `.data` klasörüne kopyalar; eksikler varsa sha256 ile sabitlenmiş resmi 0.5.0 başlatıcısını indirip model paketini otomatik kurar. kaynak modelleri zaten doğruysa tam kurulum tekrar çalıştırılmaz. python ve arayüz ortamları uygulamaya özeldir; sistem python’u ve ekran kartı sürücüleri değiştirilmez. ayrıntılar: [kurulum](docs/kurulum.md) · [derleme](docs/derleme.md).
 
 uygulama kodu mit lisanslıdır. nllb modelleri cc-by-nc 4.0 lisansıyla ticari olmayan kullanım içindir. diğer modeller ve kütüphaneler için [üçüncü taraf bildirimlerine](THIRD_PARTY_NOTICES.md) bakabilirsin.
