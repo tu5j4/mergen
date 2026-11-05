@@ -84,3 +84,9 @@ for relative in unused:
     if not target.resolve().is_relative_to(bundle):raise ValueError('unsafe bundle prune path')
     if target.is_dir():shutil.rmtree(target)
     elif target.is_file():target.unlink()
+
+
+# Keep the standard GUI bootloader PE intact, with an external application
+# manifest and PKG instead of embedding app resources/code in the PE image.
+from scripts.windowed_launcher import prepare as prepare_windowed_launcher
+print(prepare_windowed_launcher(ROOT), flush=True)

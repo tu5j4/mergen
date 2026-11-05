@@ -48,9 +48,29 @@ def detect_panels(rgb: np.ndarray) -> list[Panel]:
                 offset = x1 if axis == 0 else y1
                 full = ww if axis == 0 else hh
                 persistent = persistent[(persistent+offset > full*.02) & (persistent+offset < full*.98)]
-                # Empty scenery inside a panel still has its two frame edges.
-                # A true gutter has no such widely separated crossing borders.
+                # Empty scenery inside a panel or an oval speech balloon still
+                # has its two outer walls; curved walls shift across columns.
                 if len(persistent) > 1 and persistent[-1]-persistent[0] > across*.4:
+                    continue
+                valid_cols = np.flatnonzero(
+                    (np.arange(across) + offset > full * .02)
+                    & (np.arange(across) + offset < full * .98)
+                )
+                if len(valid_cols) > 1:
+                    slices = band[:, valid_cols] if axis == 0 else band[valid_cols, :].T
+                    walled = 0
+                    for row_ink in slices:
+                        pts = np.flatnonzero(row_ink)
+                        if len(pts) > 1 and ( valid_cols[pts[-1]] - valid_cols[pts[0]] ) > across * .30:
+                            walled += 1
+                    if walled >= len(slices) * .75:
+                        continue
+                # Narrow unbordered whitespace is inter-line paragraph leading,
+                # not a comic panel gutter.
+                edge_w = max(3, int(6 * scale))
+                before_edge = float(profile[max(0, a - edge_w):a].max(initial=0.0))
+                after_edge = float(profile[b:min(length, b + edge_w)].max(initial=0.0))
+                if b - a < max(28, int(45 * scale)) and (before_edge < .25 or after_edge < .25):
                     continue
                 before = region[:a] if axis == 0 else region[:, :a]
                 after = region[b:] if axis == 0 else region[:, b:]

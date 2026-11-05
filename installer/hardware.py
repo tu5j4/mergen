@@ -53,6 +53,13 @@ def cuda_eligible(gpu):
         return False
 
 
+def supported_python(version=None, bits=None):
+    """Eligibility for current backend provisioning, independent of GUI runtime."""
+    version = sys.version_info if version is None else version
+    bits = struct.calcsize('P') * 8 if bits is None else bits
+    return tuple(version[:2]) == (3, 12) and bits == 64
+
+
 def detect():
     windows = sys.platform == 'win32'
     report = {'os': platform.system(), 'machine': platform.machine(),
@@ -87,7 +94,7 @@ def detect():
                 report['nvidia'].append(dict(index=index, name=name, driver=driver,
                                              memory_mib=memory, compute_capability=capability))
     report['supported_os'] = windows and platform.machine().lower() in ('amd64', 'x86_64') and report['bits'] == 64 and sys.getwindowsversion().build >= 19041
-    report['supported_python'] = sys.version_info[:2] == (3, 11)
+    report['supported_python'] = supported_python(bits=report['bits'])
     # The application uses CUDA device 0; don't approve a different GPU silently.
     first = next((g for g in report['nvidia'] if g['index'] == '0'), {})
     report['cuda_candidate'] = cuda_eligible(first)

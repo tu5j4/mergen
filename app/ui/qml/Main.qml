@@ -142,6 +142,12 @@ ApplicationWindow {
         }
         contentItem: Text { text: String(select.displayText).replace(/\u0130/g, "i").toLowerCase(); font: select.font; color: root.fg; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; leftPadding: 12; rightPadding: 24 }
     }
+    component ValidationResult: ColumnLayout {
+        required property var modelData
+        Layout.fillWidth: true
+        Quiet { text: parent.modelData.title + " · " + parent.modelData.message }
+        LabelText { visible: text.length > 0; text: parent.modelData.result || ""; font.capitalization: Font.MixedCase }
+    }
     component Panel: Frame {
         property bool flat: false
         Layout.fillWidth: true
@@ -324,7 +330,7 @@ ApplicationWindow {
                     Action { objectName: "selectRegionAction"; text: "Bölge seç"; iconName: "region"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("region") }
                     Action { objectName: "fullScreenAction"; text: "Tüm ekran"; iconName: "full"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("full") }
                     Action { objectName: "translateOnceAction"; text: "Şimdi çevir"; iconName: "refresh"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("once") }
-                    Action { objectName: "toggleOverlayAction"; text: "Gizle / Göster"; iconName: "eye"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("overlay") }
+                    Action { objectName: "toggleOverlayAction"; text: root.s.overlayVisible ? "çeviriyi gizle" : "çeviriyi göster"; iconName: "eye"; Layout.fillWidth: true; Layout.preferredWidth: 1; onClicked: controller.action("overlay") }
                 }
                 Toggle { text: "Kaydırmayı takip et"; checked: root.s.scrollTracking; onClicked: controller.setting("scroll_tracking",checked) }
                 RowLayout {
@@ -361,6 +367,8 @@ ApplicationWindow {
                     padding: 12
                     Layout.minimumHeight: implicitHeight
                     Layout.maximumHeight: implicitHeight
+                    ColumnLayout {
+                    width: parent.width
                     RowLayout {
                         width: parent.width; spacing: 16
                         Repeater {
@@ -381,6 +389,8 @@ ApplicationWindow {
                             }
                         }
                     }
+                    Quiet { visible: root.s.showGpu || root.s.showVram; text: root.s.usageScope }
+                    }
             }
             Item { Layout.fillHeight: true; Layout.minimumHeight: 0; implicitHeight: 0 }
         }
@@ -395,7 +405,7 @@ ApplicationWindow {
                         Quiet { text: "çeviri kutusu opaklığı" }
                         ThemeSlider { objectName: "opacitySlider"; from: .3; to: 1; value: root.s.opacity; onMoved: controller.setting("overlay_opacity", value) }
                         Quiet { text: "yazı tipi" }
-                        Select { model: ["Segoe UI","Comic Sans MS","Arial"]; currentIndex: model.indexOf(root.s.fontFamily); onActivated: controller.setting("font_family",model[currentIndex]) }
+                        Select { objectName: "fontFamilySelect"; model: root.s.fontFamilies; currentIndex: model.indexOf(root.s.fontFamily); onActivated: controller.setting("font_family",model[currentIndex]) }
                         RowLayout { Quiet { text: "en büyük yazı boyutu" } NumberSelect { from: 10; to: 96; value: root.s.maxFont; onValueModified: controller.setting("max_font_px",value) } }
                         Toggle { text: "kalın yazı"; checked: root.s.bold; onClicked: controller.setting("font_bold",checked) }
                     }
@@ -411,16 +421,25 @@ ApplicationWindow {
                         Select { model: ["cpu","nvidia cuda","amd rocm · deneysel","intel xpu · deneysel"]; currentIndex: ["cpu","nvidia","amd","intel"].indexOf(root.s.translationBackend); onActivated: controller.setting("translation_backend",["cpu","nvidia","amd","intel"][currentIndex]) }
                         Quiet { text: "paddleocr" }
                         Select { model: ["cpu","nvidia cuda","amd rocm · deneysel","intel xpu · deneysel"]; currentIndex: ["cpu","nvidia","amd","intel"].indexOf(root.s.ocrBackend); onActivated: controller.setting("ocr_backend",["cpu","nvidia","amd","intel"][currentIndex]) }
+                        Quiet { text: "ocr motoru" }
+                        Select { objectName: "ocrEngineSelect"; model: ["otomatik","manga-ocr","paddleocr"]; currentIndex: ["auto","manga_ocr","paddleocr"].indexOf(root.s.ocrEngine); onActivated: controller.setting("ocr_engine",["auto","manga_ocr","paddleocr"][currentIndex]) }
+                        Quiet { visible: root.s.ocrEngineNote.length > 0; text: root.s.ocrEngineNote }
+                        Toggle { objectName: "paddleMobileToggle"; text: "paddleocr mobil modelleri · hızlı"; checked: root.s.paddleMobile; enabled: root.s.paddleServerAvailable || root.s.paddleMobile; onClicked: controller.setting("paddle_mobile",checked) }
+                        Quiet { visible: root.s.paddleModeNote.length > 0; text: root.s.paddleModeNote }
+                        Toggle { objectName: "bubbleDetectionToggle"; text: "konuşma balonlarını algıla ve grupla"; checked: root.s.bubbleDetection; onClicked: controller.setting("bubble_detection",checked) }
                         Toggle { text: "japonca için manga-ocr kullan"; checked: root.s.mangaEnabled; onClicked: controller.setting("use_manga_ocr",checked) }
                         Quiet { text: "manga-ocr çalışma ortamı"; visible: root.s.mangaEnabled }
                         Select { visible: root.s.mangaEnabled; model: ["cpu","nvidia cuda","amd rocm · deneysel","intel xpu · deneysel"]; currentIndex: ["cpu","nvidia","amd","intel"].indexOf(root.s.mangaBackend); onActivated: controller.setting("manga_backend",["cpu","nvidia","amd","intel"][currentIndex]) }
+                        Quiet { text: "manga-ocr cihazı" }
+                        Select { objectName: "mangaDeviceSelect"; enabled: root.s.mangaDeviceEnabled; model: ["otomatik","gpu · cuda","cpu"]; currentIndex: ["auto","cuda","cpu"].indexOf(root.s.mangaDevice); onActivated: controller.setting("manga_device",["auto","cuda","cpu"][currentIndex]) }
+                        Quiet { visible: root.s.mangaDeviceNote.length > 0; text: root.s.mangaDeviceNote }
                         Quiet { text: "çeviri modeli" }
                         Select { model: ["nllb 600m · standart","nllb 1.3b · mergen bağlam v1"]; currentIndex: root.s.model === "600m" ? 0 : 1; onActivated: controller.setting("translation_model",currentIndex === 0 ? "nllb-200-distilled-600M-ct2" : "nllb-1.3b-baglam-v3") }
                         Toggle { text: "oturum bağlamını kullan"; checked: root.s.contextEnabled; onClicked: controller.setting("session_context",checked) }
                         Quiet { visible: root.s.model === "1300m"; text: "bağlam açıkken son üç replik kullanılır. bu sürümün uyarlama eğitimi ingilizce–türkçe için yapıldı." }
                         Action { text: "seçili ortamları doğrula"; Layout.fillWidth: true; enabled: root.s.operationAvailable; onClicked: controller.action("validate") }
                         Quiet { text: root.s.validationSummary }
-                        Repeater { model: root.s.validation; delegate: Quiet { required property var modelData; text: modelData.title + " · " + modelData.message + (modelData.result ? " · " + modelData.result : ""); color: modelData.status === "passed" ? root.fg : root.muted } }
+                        Repeater { model: root.s.validation; delegate: ValidationResult {} }
                     }
                 }
                 Panel {
@@ -428,6 +447,10 @@ ApplicationWindow {
                         width: parent.width
                         LabelText { text: "okuma"; font.pixelSize: 18 }
                         Toggle { text: "kaydırmayı takip et"; checked: root.s.scrollTracking; onClicked: controller.setting("scroll_tracking",checked) }
+                        RowLayout { Quiet { text: "tarama aralığı (ms)" } NumberSelect { objectName: "pollMsSelect"; from: 10; to: 1000; stepSize: 10; value: root.s.pollMs; onValueModified: controller.setting("poll_ms",value) } }
+                        RowLayout { Quiet { text: "kaydırma durunca bekle (ms)" } NumberSelect { objectName: "settleMsSelect"; from: 0; to: 2000; stepSize: 50; value: root.s.settleMs; onValueModified: controller.setting("settle_ms",value) } }
+                        RowLayout { Quiet { text: "en küçük yazı boyutu" } NumberSelect { objectName: "minFontSelect"; from: 4; to: root.s.maxFont; value: root.s.minFont; onValueModified: controller.setting("min_font_px",value) } }
+                        RowLayout { Quiet { text: "kutu iç boşluğu" } NumberSelect { objectName: "boxPaddingSelect"; from: 0; to: 16; value: root.s.boxPadding; onValueModified: controller.setting("box_padding",value) } }
                         Toggle { objectName: "shareTranslationsToggle"; text: "Çevirileri ekran paylaşımında göster"; checked: root.s.shareTranslations; onClicked: controller.setting("share_translations",checked) }
                         Quiet { text: "tüm ekran paylaşımında çeviri katmanı görünür. bu ayarı değiştirmek için çeviriyi durdur." }
                         Toggle { text: "çinceyi ingilizce üzerinden çevir"; checked: root.s.chinesePivot; onClicked: controller.setting("chinese_translation_via_english",checked) }
@@ -450,6 +473,7 @@ ApplicationWindow {
             ColumnLayout {
                 width: parent.width; spacing: 12
                 Quiet { text: root.s.hardware }
+                Quiet { visible: root.s.devices.length > 0; text: root.s.devices }
                 Quiet { text: root.s.recommendation }
                 Action { text: "donanımı tara ve uygun kütüphaneleri kur"; Layout.fillWidth: true; enabled: root.s.operationAvailable; onClicked: controller.action("automatic-setup") }
                 Quiet { text: "gerekli çalışma kütüphaneleri internetten indirilir. ekran kartı kurulumu veya model testi geçmezse cpu ile devam edilir." }
@@ -463,7 +487,7 @@ ApplicationWindow {
                         Quiet { text: root.s.phase }
                         ThemeProgress { Layout.fillWidth: true; visible: root.s.busy; indeterminate: root.s.progress < 0; from: 0; to: 100; value: Math.max(0,root.s.progress) }
                         Quiet { text: root.s.validationSummary }
-                        Repeater { model: root.s.validation; delegate: Quiet { required property var modelData; text: modelData.title + " · " + modelData.message + (modelData.result ? " · " + modelData.result : "") } }
+                        Repeater { model: root.s.validation; delegate: ValidationResult {} }
                         Action { text: operationPanel.logExpanded ? "teknik günlüğü gizle" : "teknik günlüğü göster"; implicitHeight: 34; Layout.fillWidth: true; visible: root.s.log.length > 0; onClicked: operationPanel.logExpanded = !operationPanel.logExpanded }
                         ThemeScrollView {
                             Layout.fillWidth: true; Layout.preferredHeight: 132

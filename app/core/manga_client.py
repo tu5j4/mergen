@@ -39,6 +39,7 @@ class MangaClient:
         self._responses = queue.Queue()
         self.timeout = timeout
         self.device = 'cpu'
+        self.adapter = {}
         self.stats = {}
         self._lock = threading.Lock()
         helper = isolated_python()
@@ -57,6 +58,7 @@ class MangaClient:
             self._reader.start()
             ready = self._receive()
             self.device = ready['device']
+            self.adapter = ready.get('adapter') if isinstance(ready.get('adapter'), dict) else {}
             self.pid = ready['pid']
         except Exception:
             self.close()

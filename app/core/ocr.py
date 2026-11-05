@@ -18,7 +18,8 @@ from PIL import Image
 
 from ..config import LANGS, Settings
 from .textgroup import Box, bbox_of, group_boxes, order_boxes
-from .bubbles import bubble_id, detect_bubbles, open_white_edge
+from .ocr_budget import PredictionBudget
+from .bubbles import bubble_id, detect_bubbles, open_white_edge, shift_bubbles
 from .panels import detect_panels, panel_id, order_by_panel
 
 
@@ -34,6 +35,8 @@ class OCRBlock:
     cut_top: bool = False
     panel: int | None = None
     cut_edges: frozenset[str] = frozenset()
+    confidence: float | None = None
+    balloon: bool = False
 
 
 def resolve_gpu(setting: str) -> bool:
@@ -56,11 +59,37 @@ def resolve_gpu(setting: str) -> bool:
 
 
 # ----------------------------------------------------------------------
+_BOUND_SUFFIXES = frozenset((
+    "ing", "ed", "er", "est", "ly", "tion", "sion", "ment", "ness",
+    "ful", "less", "able", "ible", "ous", "ive", "al", "ic", "ize",
+    "ise", "ify", "ity",
+))
+
+
+def _resolve_hyphen_space(match: re.Match[str]) -> str:
+    left, right = match.group(1), match.group(2)
+    l_low, r_low = left.lower(), right.lower()
+    if len(left) <= 2 and (r_low.startswith(l_low) or (l_low == "i" and r_low == "i")):
+        return f"{left}-{right}"
+    if r_low in _BOUND_SUFFIXES:
+        return f"{left}{right}"
+    return f"{left} - {right}"
+
+
 def _sentence_case(text: str) -> str:
     t = text.lower()
-    t = re.sub(r"(^|[.!?…]\s+)([a-z])", lambda m: m.group(1) + m.group(2).upper(), t)
+    t = re.sub(
+        r'(^|[.!?…]\s+)(["\'“‘(\[\-—…\s]*[a-z])',
+        lambda m: m.group(1) + m.group(2).upper(),
+        t,
+    )
     t = re.sub(r"\bi\b", "I", t)
     t = re.sub(r"\bi'(m|ll|ve|d)\b", lambda m: "I'" + m.group(1), t)
+    t = re.sub(
+        r"\b(mr|mrs|ms|dr)\.\s+([A-Za-z])",
+        lambda m: m.group(1).capitalize() + ". " + m.group(2).upper(),
+        t,
+    )
     return t
 
 
@@ -70,7 +99,18 @@ def clean_text(text: str, lang: str) -> str:
         text = re.sub(r"\s+", "", text)
         text = re.sub(r"[.・]{2,}", "…", text)
     else:
-        text = re.sub(r"(\w)-\s+(\w)", r"\1\2", text)
+        if lang == "en":
+            text = re.sub(r"(?<=[A-Za-z])[’‘`´](?=[A-Za-z])", "'", text)
+            text = re.sub(
+                r"\b([A-Za-z]+)\s*'\s*(t|s|m|re|ve|ll|d)\b",
+                r"\1'\2",
+                text,
+                flags=re.I,
+            )
+            text = re.sub(r"([A-Za-z]+)-\s+([A-Za-z]+)", _resolve_hyphen_space, text)
+        else:
+            text = re.sub(r"(\w)-\s+(\w)", r"\1\2", text)
+        text = re.sub(r"(\.{3,}|…)(?=[A-Za-z\uac00-\ud7af])", r"\1 ", text)
         text = re.sub(r"\s+", " ", text)
         text = re.sub(r"\s+([,.!?…])", r"\1", text)
         if lang == "en":
@@ -108,9 +148,11 @@ class OCREngine:
         self.manga_warning = ''
         if settings.ocr_backend != 'local':
             from .runtime_client import RuntimeClient
-            self.paddle = RuntimeClient('ocr', settings.ocr_backend, language=lang, canvas=settings.ocr_canvas_size)
+            self.paddle = RuntimeClient('ocr', settings.ocr_backend, language=lang,
+                canvas=settings.ocr_canvas_size, paddle_mobile=settings.paddle_mobile)
             self.paddle_device = self.paddle.device
-            self.paddle_model_kind = 'Mobil · izole'
+            self.paddle_model_kind = ('Mobil · izole' if settings.paddle_mobile
+                                      else 'Sunucu · izole')
             self.gpu = settings.ocr_backend != 'cpu'
         want_paddle = lang in LANGS and settings.ocr_backend == 'local'
         if want_paddle:
@@ -127,11 +169,12 @@ class OCREngine:
                 )
                 self.paddle_device = paddle_device
                 self.paddle_model_kind = "Mobil" if settings.paddle_mobile else "Sunucu"
-                paddle_models = (
-                    {"text_detection_model_name": "PP-OCRv5_mobile_det",
-                     "text_recognition_model_name": "PP-OCRv5_mobile_rec"}
-                    if settings.paddle_mobile else {}
-                )
+                paddle_models = {
+                    'text_detection_model_name': ('PP-OCRv5_mobile_det' if settings.paddle_mobile
+                                                  else 'PP-OCRv5_server_det'),
+                    'text_recognition_model_name': ('PP-OCRv5_mobile_rec' if settings.paddle_mobile
+                                                    else 'PP-OCRv5_server_rec'),
+                }
                 if lang == 'ko':
                     paddle_models = {
                         'text_detection_model_name': 'PP-OCRv5_mobile_det' if settings.paddle_mobile else 'PP-OCRv5_server_det',
@@ -180,7 +223,7 @@ class OCREngine:
                     except Exception:
                         pass
                 print(f'[ocr] Manga yardımcı işlem: {self.manga_warning}')
-            self.gpu = self.manga is not None and self.manga.device == 'cuda'
+            self.gpu = self.manga is not None and self.manga.device.startswith(('cuda','gpu','xpu'))
 
     def close(self):
         if self.manga is not None:
@@ -192,13 +235,14 @@ class OCREngine:
 
     # ------------------------------------------------------------------
     def process_iter(self, rgb: np.ndarray, edge_px: int = 3,
-                     viewport_edges: frozenset[str] = frozenset(('top', 'bottom', 'left', 'right'))
+                     viewport_edges: frozenset[str] = frozenset(('top', 'bottom', 'left', 'right')),
+                     bubbles: list | None = None
                      ) -> Iterator[list[OCRBlock]]:
         panels = detect_panels(rgb)
         if self.manga is not None:
-            yield from self._iter_paddle_manga(rgb, edge_px, panels, viewport_edges)
+            yield from self._iter_paddle_manga(rgb, edge_px, panels, viewport_edges, bubbles=bubbles)
         elif self.paddle is not None:
-            blocks = self._process_paddle(rgb, edge_px, panels, viewport_edges)
+            blocks = self._process_paddle(rgb, edge_px, panels, viewport_edges, bubbles=bubbles)
             if blocks:
                 yield from self._panel_batches(blocks, panels)
 
@@ -221,16 +265,163 @@ class OCREngine:
         unique = []
         for b in sorted(boxes, key=lambda b: -b.conf):
             duplicate = False
+            b_clean = clean_text(b.text, self.lang)
+            b_norm = re.sub(r'\W+', '', b_clean).casefold()
             for old in unique:
                 overlap = max(0, min(b.x2, old.x2)-max(b.x1, old.x1)) * max(0, min(b.y2, old.y2)-max(b.y1, old.y1))
-                if clean_text(b.text, self.lang) == clean_text(old.text, self.lang) and overlap > .45 * min(b.w*b.h, old.w*old.h):
+                min_area = min(b.w*b.h, old.w*old.h)
+                old_clean = clean_text(old.text, self.lang)
+                if b_clean == old_clean and overlap > .45 * min_area:
                     duplicate = True
                     break
+                if overlap > .60 * min_area and len(b_norm) >= 2:
+                    old_norm = re.sub(r'\W+', '', old_clean).casefold()
+                    if b_norm in old_norm or (len(old_norm) >= 2 and old_norm in b_norm):
+                        duplicate = True
+                        break
             if not duplicate:
                 unique.append(b)
-        ids = [bubble_id(b, bubbles, .75 if self.lang == 'ja' else 0.0)
+        ids = [bubble_id(b, bubbles, .75 if self.lang in ('ja','en') else 0.0,
+                         interior_coverage=.50 if self.lang == 'en' else None)
                for b in unique] if bubbles else None
         pids = [panel_id(b, panels) for b in unique] if panels else None
+        if pids is not None and panels:
+            for i, b in enumerate(unique):
+                if pids[i] is not None or b.vertical:
+                    continue
+                overlapped = [
+                    idx_p for idx_p, p in enumerate(panels)
+                    if max(0, min(b.x2, p.x2) - max(b.x1, p.x1))
+                    * max(0, min(b.y2, p.y2) - max(b.y1, p.y1)) >= .50 * b.w * b.h
+                ]
+                if len(overlapped) == 1:
+                    cand_p = overlapped[0]
+                    if any(
+                        pids[j] == cand_p and not other.vertical
+                        and max(0, min(b.x2, other.x2) - max(b.x1, other.x1)) / max(1, min(b.w, other.w)) > .45
+                        and max(0, max(b.y1, other.y1) - min(b.y2, other.y2)) <= max(b.char_size, other.char_size) * self.s.group_gap_ratio
+                        for j, other in enumerate(unique)
+                    ):
+                        pids[i] = cand_p
+        if self.lang == 'en' and ids is not None and bubbles:
+            changed = True
+            while changed:
+                changed = False
+                for i, b in enumerate(unique):
+                    if ids[i] is not None or b.vertical:
+                        continue
+                    raw_bid = bubble_id(b, bubbles, 0.0)
+                    for j, other in enumerate(unique):
+                        cand = ids[j]
+                        if cand is None or other.vertical:
+                            continue
+                        if raw_bid not in (None, cand):
+                            continue
+                        if pids is not None and pids[i] != pids[j] and pids[i] is not None and pids[j] is not None:
+                            continue
+                        bub = bubbles[cand]
+                        if b.x1 < bub.x1 - b.char_size or b.x2 > bub.x2 + b.char_size:
+                            continue
+                        ca, cb = b.char_size, other.char_size
+                        if max(ca, cb) / max(1, min(ca, cb)) > 1.6:
+                            continue
+                        xo = max(0, min(b.x2, other.x2) - max(b.x1, other.x1)) / max(1, min(b.w, other.w))
+                        vgap = max(0, max(b.y1, other.y1) - min(b.y2, other.y2))
+                        if xo > .45 and vgap <= max(ca, cb) * self.s.group_gap_ratio:
+                            ids[i] = cand
+                            changed = True
+                            break
+        if self.lang == 'en' and ids is not None:
+            # A verified balloon is one passage even with ragged centering,
+            # generous leading or a short last word. Never relax geometry for
+            # unknown/scenery boxes, and never join across two distinct panels.
+            # A line straddling a false gutter inside the same balloon (panel None)
+            # follows the nearest assigned line in that balloon so non-adjacent
+            # unassigned lines never merge around a middle line.
+            assigned_panels = {}
+            if pids is not None:
+                for idx_b, (bid, pid) in enumerate(zip(ids, pids)):
+                    if bid is not None and pid is not None:
+                        assigned_panels.setdefault(bid, []).append((unique[idx_b].cy, pid))
+            paragraphs = {}
+            unknown = []
+            for i, bid in enumerate(ids):
+                box = unique[i]
+                pid = pids[i] if pids is not None else None
+                if pid is None and bid in assigned_panels:
+                    pid = min(assigned_panels[bid], key=lambda item: abs(box.cy - item[0]))[1]
+                short_latin = (bool(re.fullmatch(r'[A-Za-z]{1,3}[.!?]?', box.text.strip()))
+                    and any(not other.vertical and box.h <= other.h * 1.5
+                            and ids[j] == bid
+                            and (pids is None or pids[j] == pid or pids[j] is None)
+                            for j, other in enumerate(unique)))
+                if bid is None or (box.vertical and not short_latin):
+                    unknown.append(i)
+                else:
+                    key = (bid, pid)
+                    paragraphs.setdefault(key, []).append(box)
+            remaining = [unique[i] for i in unknown]
+            remaining_panels = [pids[i] for i in unknown] if pids is not None else None
+            # Preserve the original center-based isolation for fallback geometry
+            # (notably vertical/outline columns); coverage cannot relax it.
+            remaining_ids = [bubble_id(b, bubbles) for b in remaining] if bubbles else None
+            # A short word ("I", "A") split onto the start of a horizontal line
+            # can have h > 1.5*w. Widen a proxy only when a horizontal neighbor
+            # shares the same baseline, never for vertical columns.
+            proxies = []
+            for idx, b in enumerate(remaining):
+                if (b.vertical and bool(re.fullmatch(r'[A-Za-z]{1,3}[.!?]?', b.text.strip()))
+                        and any(k != idx and other.w > other.h * 1.5
+                                and (remaining_ids is None or remaining_ids[k] == remaining_ids[idx])
+                                and (remaining_panels is None or remaining_panels[k] == remaining_panels[idx])
+                                and max(0, min(b.y2, other.y2) - max(b.y1, other.y1)) >= 0.6 * min(b.h, other.h)
+                                and max(0, max(b.x1, other.x1) - min(b.x2, other.x2)) <= max(b.h, other.h) * self.s.group_gap_ratio
+                                for k, other in enumerate(remaining))):
+                    proxies.append(Box(b.x1, b.y1, max(b.x2, b.x1 + b.h), b.y2, b.text, b.conf))
+                elif (b.w > b.h * 1.5 and any(
+                        k != idx and other.w > other.h * 1.5
+                        and (remaining_ids is None or remaining_ids[k] == remaining_ids[idx])
+                        and (remaining_panels is None or remaining_panels[k] == remaining_panels[idx])
+                        and max(b.h, other.h) / max(1, min(b.h, other.h)) <= 1.4
+                        and max(0, min(b.x2, other.x2) - max(b.x1, other.x1)) / max(1, min(b.w, other.w)) >= 0.55
+                        and 0 < other.y1 - b.y2 <= max(b.h, other.h) * 0.85
+                        for k, other in enumerate(remaining))):
+                    proxies.append(Box(b.x1, b.y1, b.x2, b.y2 + max(2, int(b.h * 0.20)), b.text, b.conf))
+                else:
+                    proxies.append(b)
+            geometric = group_boxes(proxies, self.s.group_gap_ratio,
+                                    bubble_ids=remaining_ids, panel_ids=remaining_panels)
+            return list(paragraphs.values()) + [[remaining[i] for i in g] for g in geometric]
+        if self.lang == 'en' and not bubbles:
+            proxies = []
+            for idx, b in enumerate(unique):
+                if (b.vertical and bool(re.fullmatch(r'[A-Za-z]{1,3}[.!?]?', b.text.strip()))
+                        and any(k != idx and other.w > other.h * 1.5
+                                and (pids is None or pids[k] == pids[idx])
+                                and max(0, min(b.y2, other.y2) - max(b.y1, other.y1)) >= 0.6 * min(b.h, other.h)
+                                and max(0, max(b.x1, other.x1) - min(b.x2, other.x2)) <= max(b.h, other.h) * self.s.group_gap_ratio
+                                for k, other in enumerate(unique))):
+                    proxies.append(Box(b.x1, b.y1, max(b.x2, b.x1 + b.h), b.y2, b.text, b.conf))
+                elif (b.w > b.h * 1.5 and any(
+                        k != idx and other.w > other.h * 1.5
+                        and (pids is None or pids[k] == pids[idx])
+                        and max(b.h, other.h) / max(1, min(b.h, other.h)) <= 1.4
+                        and max(0, min(b.x2, other.x2) - max(b.x1, other.x1)) / max(1, min(b.w, other.w)) >= 0.55
+                        and 0 < other.y1 - b.y2 <= max(b.h, other.h) * 0.85
+                        for k, other in enumerate(unique))):
+                    proxies.append(Box(b.x1, b.y1, b.x2, b.y2 + max(2, int(b.h * 0.20)), b.text, b.conf))
+                else:
+                    proxies.append(b)
+            return [[unique[i] for i in g] for g in group_boxes(
+                proxies, self.s.group_gap_ratio, None, pids)]
+        if self.lang == 'ko' and pids is not None and ids is not None:
+            assigned_ko = {}
+            for bid, pid in zip(ids, pids):
+                if bid is not None and pid is not None:
+                    assigned_ko.setdefault(bid, set()).add(pid)
+            pids = [next(iter(assigned_ko[bid]))
+                    if pid is None and bid in assigned_ko and len(assigned_ko[bid]) == 1 else pid
+                    for bid, pid in zip(ids, pids)]
         return [[unique[i] for i in g] for g in group_boxes(
             unique, self.s.group_gap_ratio, ids, pids,
             same_bubble_gap_ratio=1.25 if self.lang == 'ko' else None,
@@ -250,14 +441,20 @@ class OCREngine:
             edges.add('bottom')
         # Text may be fully visible while its enclosing balloon is clipped.
         # Ignore large scene-background candidates from the bubble detector.
+        has_verified_balloon = False
         for member in members:
-            bid = bubble_id(member, bubbles, min_coverage)
+            bid = bubble_id(member, bubbles, min_coverage,
+                            interior_coverage=.50 if min_coverage >= .75 else None)
             if bid is None:
                 continue
             b = bubbles[bid]
             area = (b.x2-b.x1)*(b.y2-b.y1)
-            if area > W*H*.18 or area > max(1, (x2-x1)*(y2-y1))*12:
+            if area > max(1, (x2-x1)*(y2-y1))*12 and (
+                    b.x2 - b.x1 > W * 0.70 or b.y2 - b.y1 > H * 0.85):
                 continue
+            if area > W*H*.35 and (b.x2 - b.x1 > W * 0.65 and b.y2 - b.y1 > H * 0.65):
+                continue
+            has_verified_balloon = True
             touches = False
             if b.x1 <= edge:
                 edges.add('left')
@@ -272,24 +469,80 @@ class OCREngine:
                 edges.add('bottom')
                 touches = True
             if touches:
-                y1, y2 = min(y1, b.y1), max(y2, b.y2)
+                y1, y2 = min(y1, max(0, b.y1)), max(y2, min(H, b.y2))
+        if not has_verified_balloon and members and not all(m.vertical for m in members):
+            # Without a closed balloon contour, a horizontal line sitting less than
+            # one line-height from a true top/bottom viewport edge is very likely a
+            # half-visible balloon whose remaining lines are still off-screen.
+            line_h = max(1, min((b.char_size for b in members), default=y2 - y1))
+            margin = max(edge, min(28, int(line_h * 0.75)))
+            if 'top' in viewport_edges and y1 <= margin:
+                edges.add('top')
+            if 'bottom' in viewport_edges and H - y2 <= margin:
+                edges.add('bottom')
         if rgb is not None:
             group = Box(x1, y1, x2, y2)
             for side in viewport_edges:
-                if side not in edges and open_white_edge(rgb, group, side):
+                probe = group
+                if side in ('top', 'bottom'):
+                    # A single visible line can sit above a clipped balloon's
+                    # remaining lines. Probe one line farther inward, retaining
+                    # the image-level curved/compact open-balloon checks.
+                    line = max(1, min((b.char_size for b in members), default=group.h))
+                    probe = Box(x1, max(0, y1-line) if side == 'bottom' else y1,
+                                x2, min(H, y2+line) if side == 'top' else y2)
+                if side not in edges and open_white_edge(rgb, probe, side):
                     edges.add(side)
         return bool(edges), 'top' in edges, y1, y2, frozenset(edges)
 
     def process(self, rgb: np.ndarray) -> list[OCRBlock]:
         return [b for batch in self.process_iter(rgb) for b in batch]
 
+    def reset_scan(self):
+        """Begin an explicitly fresh strip, even when its pixels are identical."""
+        self._prediction_budget = None
+        self.last_predict_count = 0
+        self.has_pending_retries = False
+        self.pending_retry_count = 0
+
+    def _predict(self, rgb, primary=False):
+        budget = getattr(self, '_prediction_budget', None)
+        if budget is None:
+            budget = self._prediction_budget = PredictionBudget()
+        try:
+            return budget.predict(self.paddle.predict, rgb, primary=primary)
+        finally:
+            self.last_predict_count = budget.used
+            self.has_pending_retries = bool(budget.pending)
+            self.pending_retry_count = len(budget.pending)
+
     def _process_paddle(self, rgb: np.ndarray, edge: int, panels=None,
-                        viewport_edges=frozenset(('top', 'bottom', 'left', 'right'))) -> list[OCRBlock]:
+                        viewport_edges=frozenset(('top', 'bottom', 'left', 'right')),
+                        finish_budget=True, bubbles=None) -> list[OCRBlock]:
         """PP-OCR v3/v5 sonuçlarını sürümden bağımsız şekilde OCRBlock'a dönüştürür."""
         H, W = rgb.shape[:2]
-        bubbles = detect_bubbles(rgb, self.s.bubble_min_area) if self.s.bubble_detection else []
+        budget = getattr(self, '_prediction_budget', None)
+        if budget is None:
+            budget = self._prediction_budget = PredictionBudget()
+        budget.begin(rgb)
+        self.last_predict_count = 0
+        self.has_pending_retries = False
+        self.pending_retry_count = 0
+        if not self.s.bubble_detection:
+            bubbles = []
+        elif bubbles is None:
+            bubbles = detect_bubbles(rgb, self.s.bubble_min_area)
+        else:
+            local = detect_bubbles(rgb, self.s.bubble_min_area)
+            bubbles = list(bubbles) + [
+                b for b in local
+                if not any(max(0, min(b.x2, e.x2)-max(b.x1, e.x1)) *
+                           max(0, min(b.y2, e.y2)-max(b.y1, e.y1)) >
+                           0.7 * min(max(1, (b.x2-b.x1)*(b.y2-b.y1)),
+                                     max(1, (e.x2-e.x1)*(e.y2-e.y1)))
+                           for e in bubbles)]
         try:
-            result = next(iter(self.paddle.predict(rgb)))
+            result = self._predict(rgb, primary=True)
             data = getattr(result, "json", result)
             if isinstance(data, str):
                 data = json.loads(data)
@@ -331,21 +584,32 @@ class OCREngine:
             self._retry_english_bubbles(rgb, boxes, weak_boxes, bubbles, edge)
         panels = detect_panels(rgb) if panels is None else panels
         blocks: list[OCRBlock] = []
+        group_cov = .75 if self.lang in ('ja', 'en') else 0.0
+        group_int = .35 if self.lang == 'en' else None
         for group in self._layout_groups(boxes, bubbles, panels):
             members = order_boxes(group, self.info["vertical_rtl"])
             x1, y1, x2, y2 = bbox_of(members)
             vertical = sum(b.vertical for b in members) > len(members) / 2
+            bids = {bubble_id(m, bubbles, group_cov, interior_coverage=group_int)
+                    for m in members} if bubbles else {None}
+            in_balloon = len(bids) == 1 and None not in bids
             cut, cut_top, y1, y2, cut_edges = self._cut_region(
                 x1, y1, x2, y2, W, H, edge, members, bubbles,
                 min_coverage=.75 if self.lang == 'ja' else 0.0,
                 rgb=rgb, viewport_edges=viewport_edges)
             if cut:
                 blocks.append(OCRBlock(x1, y1, x2, y2, "", vertical, cut=True,
-                                       cut_top=cut_top, cut_edges=cut_edges))
+                                       cut_top=cut_top, cut_edges=cut_edges,
+                                       confidence=min(b.conf for b in members),
+                                       balloon=in_balloon))
                 continue
             text = clean_text(self.info["joiner"].join(b.text for b in members), self.lang)
             if is_meaningful(text, self.lang):
-                blocks.append(OCRBlock(x1, y1, x2, y2, text, vertical))
+                blocks.append(OCRBlock(x1, y1, x2, y2, text, vertical,
+                                       confidence=min(b.conf for b in members),
+                                       balloon=in_balloon))
+        if finish_budget:
+            budget.finish()
         return blocks
 
     def _split_paddle_bubble_regions(self, rgb, data, bubbles):
@@ -374,7 +638,7 @@ class OCREngine:
                 # boyutundaki bölgeler için ek okuma yapma.
                 if 0.2 < fraction < 0.80 and (bubble.x2 - bubble.x1) * (bubble.y2 - bubble.y1) < W * H * 0.35:
                     candidates.append(bubble)
-            if not candidates or retried >= 2:
+            if not candidates:
                 out.append((rect, text, score))
                 continue
             bubble = min(candidates, key=lambda b: (b.x2 - b.x1) * (b.y2 - b.y1))
@@ -384,6 +648,8 @@ class OCREngine:
                        (x1, max(y1, bubble.y1), min(x2, bubble.x1), min(y2, bubble.y2)),
                        (max(x1, bubble.x2), max(y1, bubble.y1), x2, min(y2, bubble.y2))]
             recovered = []
+            budget = getattr(self, '_prediction_budget', None)
+            deferred_before = len(budget.pending) if budget is not None else 0
             inside_found = False
             retried += 1
             try:
@@ -391,7 +657,7 @@ class OCREngine:
                     a, b, c, d = self._clamp(a, b, c, d, W, H)
                     if min(c - a, d - b) < 20:
                         continue
-                    result = next(iter(self.paddle.predict(np.ascontiguousarray(rgb[b:d, a:c]))))
+                    result = self._predict(np.ascontiguousarray(rgb[b:d, a:c]))
                     local = getattr(result, "json", result)
                     if isinstance(local, str):
                         local = json.loads(local)
@@ -408,12 +674,16 @@ class OCREngine:
             except Exception as e:
                 print(f"[ocr] Balon sınırı yeniden okuması atlandı: {e}")
                 inside_found = False
+            # A partly scanned split must never discard the original row.
+            budget = getattr(self, '_prediction_budget', None)
+            if budget is not None and (len(budget.pending) > deferred_before or budget.failures):
+                inside_found = False
             out.extend(recovered if inside_found else [(rect, text, score)])
         return {"rec_boxes": [r for r, t, s in out], "rec_texts": [t for r, t, s in out],
                 "rec_scores": [s for r, t, s in out]}
 
     def _retry_english_bubbles(self, rgb, boxes, weak_boxes, bubbles, edge):
-        """Recover missed English lines in at most two complete, light balloons.
+        """Recover missed English lines with the shared strip prediction budget.
 
         Uncovered letter-sized ink (or a low-confidence line) triggers one local
         OCR pass. Keep strong existing lines; never retry a clipped balloon or
@@ -426,8 +696,6 @@ class OCREngine:
         self.last_english_retry_count = 0
         self.last_english_recovered_count = 0
         for balloon in sorted(bubbles, key=lambda b: (b.y1, b.x1)):
-            if self.last_english_retry_count >= 2:
-                break
             x1, y1, x2, y2 = balloon.x1, balloon.y1, balloon.x2, balloon.y2
             if (x1 <= edge or y1 <= edge or x2 >= W - edge or y2 >= H - edge
                     or (x2 - x1) * (y2 - y1) > W * H * .45):
@@ -463,13 +731,13 @@ class OCREngine:
                 continue
             self.last_english_retry_count += 1
             try:
-                result = next(iter(self.paddle.predict(np.ascontiguousarray(rgb[y1:y2, x1:x2]))))
+                result = self._predict(np.ascontiguousarray(rgb[y1:y2, x1:x2]))
                 data = getattr(result, "json", result)
                 if isinstance(data, str):
                     data = json.loads(data)
                 data = data.get("res", data) if isinstance(data, dict) else {}
                 for rect, text, score in zip(data.get('rec_boxes', []), data.get('rec_texts', []), data.get('rec_scores', [])):
-                    if float(score) < max(.85, self.s.min_confidence) or not is_meaningful(str(text), 'en'):
+                    if float(score) < max(.75, self.s.min_confidence) or not is_meaningful(str(text), 'en'):
                         continue
                     a, b, c, d = self._clamp(*rect, x2 - x1, y2 - y1)
                     if min(c - a, d - b) < self.s.min_box_size:
@@ -480,7 +748,11 @@ class OCREngine:
                     overlaps = [old for old in boxes if
                                 max(0, min(new.x2, old.x2) - max(new.x1, old.x1)) *
                                 max(0, min(new.y2, old.y2) - max(new.y1, old.y1)) > .4 * min(new.w * new.h, old.w * old.h)]
-                    if any(old.conf >= .85 or old.conf >= new.conf for old in overlaps):
+                    if not overlaps and new.conf < max(.85, self.s.min_confidence):
+                        continue
+                    if any(old.conf >= .85 or old.conf >= new.conf
+                           or (new.conf < .85 and (old.conf >= .65 or new.conf < old.conf + .10))
+                           for old in overlaps):
                         continue
                     for old in overlaps:
                         boxes.remove(old)
@@ -505,8 +777,6 @@ class OCREngine:
                        for c in text)
 
         for weak in sorted(weak_boxes, key=lambda b: b.conf):
-            if len(tried) >= 4:
-                break
             if cjk_count(weak.text) == 0:
                 continue
             if any(x1 <= weak.cx <= x2 and y1 <= weak.cy <= y2
@@ -524,7 +794,7 @@ class OCREngine:
                 continue
             tried.append((x1, y1, x2, y2))
             try:
-                result = next(iter(self.paddle.predict(crop)))
+                result = self._predict(crop)
                 data = getattr(result, "json", result)
                 if isinstance(data, str):
                     data = json.loads(data)
@@ -577,7 +847,17 @@ class OCREngine:
         texts = []
         batch_n = max(1, min(4, int(self.s.manga_batch)))
         for i in range(0, len(crops), batch_n):
-            texts.extend(self.manga.recognize(crops[i:i+batch_n]))
+            batch=crops[i:i+batch_n]
+            budget=getattr(self,'_prediction_budget',None)
+            if budget is None:
+                budget=self._prediction_budget=PredictionBudget()
+            key=tuple(budget.key(np.asarray(crop)) for crop in batch)
+            try:
+                texts.extend(budget.call('manga',key,lambda:self.manga.recognize(batch),['']*len(batch)))
+            finally:
+                self.last_predict_count=budget.used
+                self.has_pending_retries=bool(budget.pending)
+                self.pending_retry_count=len(budget.pending)
         return texts
 
     # ------------------------------------------------------------------
@@ -685,11 +965,13 @@ class OCREngine:
 
     # ------------------------------------------------------------------
     def _iter_paddle_manga(self, rgb: np.ndarray, edge: int, panels,
-                           viewport_edges=frozenset(('top', 'bottom', 'left', 'right'))
+                           viewport_edges=frozenset(('top', 'bottom', 'left', 'right')),
+                           bubbles=None
                            ) -> Iterator[list[OCRBlock]]:
         import cv2
         gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
-        blocks = self._process_paddle(rgb, edge, panels, viewport_edges)
+        blocks = self._process_paddle(rgb, edge, panels, viewport_edges,
+                                      finish_budget=False, bubbles=bubbles)
         for panel_batch in self._panel_batches(blocks, panels):
             for i in range(0, len(panel_batch), 3):
                 chunk = panel_batch[i:i+3]
@@ -703,6 +985,8 @@ class OCREngine:
                 try:
                     texts = self._manga_batch(all_crops)
                     for b, (s, e) in zip(complete, spans):
+                        if any(not value for value in texts[s:e]):
+                            continue
                         text = clean_text(''.join(texts[s:e]), self.lang)
                         if is_meaningful(text, self.lang):
                             b.text = text
@@ -711,3 +995,6 @@ class OCREngine:
                     # must still reach the scroll cache even if the helper dies.
                     print(f'[ocr] manga-ocr yeniden okuması atlandı; Paddle korunuyor: {e}')
                 yield chunk
+        budget=getattr(self,'_prediction_budget',None)
+        if budget is not None:
+            budget.finish()

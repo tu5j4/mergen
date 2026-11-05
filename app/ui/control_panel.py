@@ -1,31 +1,22 @@
-"""
-Ana kontrol paneli: dil seçimi, bölge seçimi, başlat/durdur, görünüm ayarları.
+"""Reading worker host. Settings, hotkeys and system usage belong to the controller.
+
+This is an intentionally UI-less backend: QML is the only presentation layer.
+It owns the overlay surfaces, the worker thread, the reading region and the
+region selector. It never loads or saves settings on its own; the controller
+passes its single ``Settings`` instance in ``__init__``.
 """
 from __future__ import annotations
 
-import importlib.util
+import sys
 
-from PySide6.QtCore import QObject, QRect, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QFont, QFontDatabase, QGuiApplication, QIcon
-from PySide6.QtWidgets import (
-    QHBoxLayout, QDialog, QMessageBox, QProgressBar, QSlider, QSpinBox,
-    QVBoxLayout, QWidget, QScrollArea, QSizePolicy,
-)
-from .menu_widgets import (MenuCheckBox as QCheckBox, MenuComboBox as QComboBox,
-                          MenuFormLayout as QFormLayout, MenuGroupBox as QGroupBox,
-                          MenuLabel as QLabel, MenuButton as QPushButton, menu_text)
-from .usage_monitor import UsageMonitor
+from PySide6.QtCore import QObject, QRect, QThread, QTimer, Signal
+from PySide6.QtGui import QCursor, QGuiApplication
 
-from ..config import APP_ICON, PROJECT_ROOT, LANGS, PRESET_NAMES, TRANSLATION_MODELS, Settings
+from ..config import Settings
 from ..core.pipeline import TranslationWorker
-from ..platform_utils import exclude_from_capture, logical_to_capture_rect
-from .overlay import OverlayWindow
+from ..platform_utils import logical_to_capture_rect, logical_capture_plan
+from .overlay import OverlayGroup
 from .region_selector import RegionSelector
-
-HOTKEYS_TEXT = (
-    "Kısayollar:  Ctrl+Alt+T başlat/durdur  •  Ctrl+Alt+R bölge seç\n"
-    "Ctrl+Alt+H çeviriyi gizle/göster (orijinali gör)  •  Ctrl+Alt+Y şimdi çevir"
-)
 
 
 class HotkeyBridge(QObject):
@@ -56,467 +47,54 @@ def start_global_hotkeys(bridge: HotkeyBridge):
         return None
 
 
-class ControlPanel(QWidget):
-    def __init__(self, enable_hotkeys=True) -> None:
-        super().__init__()
-        self.s = Settings.load()
-        self.setWindowTitle("mergen")
-        self.setWindowIcon(QIcon(str(APP_ICON)))
-        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
-        self.setMinimumWidth(370)
-        self.setObjectName("controlPanel")
-        self.setMaximumWidth(420)
+class ControlPanel(QObject):
+    status_changed = Signal(str)
+    running_changed = Signal(bool)
+    devices_changed = Signal(str)
+    region_changed = Signal(object)
+    error = Signal(str)
+    closed = Signal()
+    runtime_adapter = Signal(dict)
+    settings_changed = Signal()
 
+    def __init__(self, settings: Settings, parent=None) -> None:
+        super().__init__(parent)
+        self.s = settings
         self.worker: TranslationWorker | None = None
         self.thread: QThread | None = None
         self.running = False
         self.region: QRect | None = None
         self._selector: RegionSelector | None = None
         self._start_after_select = False
+        self._closing = False
+        self._closed = False
+        self._finish_emitted = False
 
-        # Overlay: başlangıçta birincil ekranı kaplar (boş ve tıklama geçirgen)
-        self.overlay = OverlayWindow(self.s)
+        self.overlay = OverlayGroup(settings)
         self.overlay.capture_areas_changed.connect(self._on_overlay_areas_changed)
-        self.overlay.setGeometry(QGuiApplication.primaryScreen().geometry())
-        self.overlay.show()
-        self.overlay.ensure_platform_setup()
-        self.overlay.setVisible(self.s.overlay_visible)
-
-        self._build_ui()
-        self.usage_monitor = UsageMonitor(self)
-        self.usage_monitor.readings.connect(self._update_usage)
-        self._apply_usage_visibility()
-
-        if self.s.last_region and len(self.s.last_region) == 4:
-            self._apply_region(QRect(*self.s.last_region))
-
-        self.bridge = HotkeyBridge()
-        self.bridge.toggle_run.connect(self.toggle_run)
-        self.bridge.select_region.connect(lambda: self.select_region(False))
-        self.bridge.toggle_overlay.connect(self.toggle_overlay_visible)
-        self.bridge.translate_now.connect(self.translate_now)
-        self.hotkeys = start_global_hotkeys(self.bridge) if enable_hotkeys else None
-
-
-    # ------------------------------------------------------------------ UI
-    def _build_ui(self) -> None:
-        root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 10)
-        root.setSpacing(14)
-
-        g_src = QGroupBox("çeviri")
-        f_src = QFormLayout(g_src)
-        f_src.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
-        f_src.setVerticalSpacing(10)
-        self.cb_lang = QComboBox()
-        for code, info in LANGS.items():
-            self.cb_lang.addItem(info["name"], code)
-        self.cb_lang.setCurrentIndex(max(0, self.cb_lang.findData(self.s.source_lang)))
-        self.cb_lang.currentIndexChanged.connect(self._on_lang_changed)
-        f_src.addRow("Kaynak dil", self.cb_lang)
-        self.cb_ocr = QComboBox()
-        self.cb_ocr.currentIndexChanged.connect(self._on_ocr_changed)
-        f_src.addRow("OCR motoru", self.cb_ocr)
-        self._refresh_ocr_menu()
-
-        root.addWidget(g_src)
-        row = QHBoxLayout()
-        self.btn_region = QPushButton("Bölge seç")
-        self.btn_region.clicked.connect(lambda: self.select_region(False))
-        self.btn_full = QPushButton("Tüm ekran")
-        self.btn_full.clicked.connect(self._select_fullscreen)
-        row.addWidget(self.btn_region)
-        row.addWidget(self.btn_full)
-        root.addLayout(row)
-        self.lbl_region = QLabel("Henüz seçilmedi", self)
-        self.lbl_region.hide()  # Region details remain available to existing code, without a visible card.
-
-        self.btn_run = QPushButton("▶  Başlat")
-        self.btn_run.setObjectName('run')
-        self.btn_run.setMinimumHeight(42)
-        f = self.btn_run.font()
-        f.setBold(True)
-        self.btn_run.setFont(f)
-        self.btn_run.clicked.connect(self.toggle_run)
-        self.btn_now = QPushButton("Şimdi çevir")
-        self.btn_now.setFixedHeight(36)
-        self.btn_now.clicked.connect(self.translate_now)
-
-        action_row = QHBoxLayout()
-        self.btn_overlay = QPushButton("çeviriyi gizle" if self.s.overlay_visible else "çeviriyi göster")
-        self.btn_overlay.setFixedHeight(36)
-        self.btn_overlay.clicked.connect(self.toggle_overlay_visible)
-        self.btn_settings = QPushButton("")
-        self.btn_settings.setObjectName('settings')
-        self.btn_settings.setIcon(QIcon(str(PROJECT_ROOT / 'assets' / 'ui' / 'settings.svg')))
-        self.btn_settings.setFixedHeight(36)
-        self.btn_settings.setToolTip('ayarlar')
-        self.btn_settings.setAccessibleName('ayarlar')
-        self.btn_settings.clicked.connect(self._show_settings)
-        action_row.addWidget(self.btn_now, 1)
-        action_row.addWidget(self.btn_overlay, 1)
-        action_row.addWidget(self.btn_settings, 1)
-        dock = QWidget()
-        dock.setObjectName("toolDock")
-        dock.setLayout(action_row)
-        action_row.setContentsMargins(0, 0, 0, 0)
-        action_row.setSpacing(8)
-        for button in (self.btn_now, self.btn_overlay, self.btn_settings):
-            button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-        root.addWidget(dock)
-        root.addWidget(self.btn_run)
-
-        self.lbl_status = QLabel("Hazır")
-        self.lbl_status.setWordWrap(True)
-        self.lbl_status.setObjectName("status")
-        root.addWidget(self.lbl_status)
-        root.addStretch(1)
-
-        self.usage_group = QGroupBox("sistem kullanımı")
-        self.usage_group.setObjectName("usageGroup")
-        usage_l = QVBoxLayout(self.usage_group)
-        usage_l.setSpacing(14)
-        self.usage_rows = {}
-        self.usage_values = {}
-        for key, label in (('gpu', 'gpu'), ('vram', 'vram'), ('cpu', 'cpu')):
-            container = QWidget()
-            container.setObjectName("usageRow")
-            stack = QVBoxLayout(container)
-            stack.setContentsMargins(0, 0, 0, 0)
-            stack.setSpacing(5)
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            name = QLabel(label)
-            name.setFixedWidth(36)
-            name.setObjectName("usageName")
-            row.addWidget(name)
-            bar = QProgressBar()
-            bar.setRange(0, 100)
-            bar.setValue(0)
-            bar.setTextVisible(False)
-            bar.setFixedHeight(5)
-            value_label = QLabel('bekleniyor')
-            value_label.setObjectName('usageValue')
-            value_label.setFixedWidth(92)
-            value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self.usage_values[key] = value_label
-            bar.setToolTip('tüm sistem kullanımı' if key != 'vram' else 'kullanılan ekran kartı belleği / toplam bellek')
-            row.addStretch(1)
-            row.addWidget(value_label)
-            stack.addLayout(row)
-            stack.addWidget(bar)
-            container.setMinimumHeight(28)
-            setattr(self, key + '_bar', bar)
-            self.usage_rows[key] = container
-            usage_l.addWidget(container)
-        root.addWidget(self.usage_group)
-
-        self.settings_dialog = QDialog(self)
-        self.settings_dialog.setWindowTitle("mergen · ayarlar")
-        self.settings_dialog.setMinimumWidth(370)
-        dialog_root = QVBoxLayout(self.settings_dialog)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        settings_content = QWidget()
-        settings_root = QVBoxLayout(settings_content)
-        settings_root.setContentsMargins(2, 2, 2, 2)
-        settings_root.setSpacing(8)
-        scroll.setWidget(settings_content)
-        dialog_root.addWidget(scroll)
-        self.settings_dialog.resize(410, min(620, QGuiApplication.primaryScreen().availableGeometry().height() - 80))
-        g_view = QGroupBox("Görünüm")
-        f_view = QFormLayout(g_view)
-        f_view.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
-        f_view.setVerticalSpacing(6)
-        self.chk_visible = QCheckBox("Çeviriyi göster")
-        self.chk_visible.setChecked(self.s.overlay_visible)
-        self.chk_visible.toggled.connect(self._on_visible_changed)
-
-        self.cb_panel_theme = QComboBox()
-        for code, name in (("green", "Yeşil"), ("white", "Beyaz"),
-                           ("navy", "Lacivert"), ("black", "Siyah"), ("sepia", "Sepya")):
-            self.cb_panel_theme.addItem(name, code)
-        self.cb_panel_theme.setCurrentIndex(max(0, self.cb_panel_theme.findData(self.s.panel_theme)))
-        self.cb_panel_theme.currentIndexChanged.connect(self._on_panel_theme_changed)
-        f_view.addRow("Panel teması:", self.cb_panel_theme)
-
-        self.cb_theme = QComboBox()
-        for code, name in (("white", "Beyaz"), ("black", "Siyah"), ("sepia", "Sepya"),
-                           ("navy", "Lacivert"), ("gray", "Gri")):
-            self.cb_theme.addItem(name, code)
-        self.cb_theme.setCurrentIndex(max(0, self.cb_theme.findData(self.s.theme)))
-        self.cb_theme.currentIndexChanged.connect(self._on_theme_changed)
-        f_view.addRow("Çeviri kutusu teması:", self.cb_theme)
-
-        self.sl_opacity = QSlider(Qt.Orientation.Horizontal)
-        self.sl_opacity.setRange(30, 100)
-        self.sl_opacity.setValue(int(self.s.overlay_opacity * 100))
-        self.sl_opacity.valueChanged.connect(self._on_opacity)
-        f_view.addRow("Kutu opaklığı:", self.sl_opacity)
-
-        self.cb_font = QComboBox()
-        for family in QFontDatabase.families():
-            self.cb_font.addItem(family, family)
-        if self.cb_font.findData(self.s.font_family) < 0:
-            self.cb_font.addItem(self.s.font_family, self.s.font_family)
-        self.cb_font.setCurrentIndex(self.cb_font.findData(self.s.font_family))
-        self.cb_font.currentIndexChanged.connect(lambda _: self._on_font(QFont(self.cb_font.currentData())))
-        f_view.addRow("Yazı tipi:", self.cb_font)
-
-        self.sp_maxfont = QSpinBox()
-        self.sp_maxfont.setRange(10, 96)
-        self.sp_maxfont.setValue(self.s.max_font_px)
-        self.sp_maxfont.valueChanged.connect(self._on_maxfont)
-        f_view.addRow("Maks. yazı boyu (px):", self.sp_maxfont)
-
-        self.chk_bold = QCheckBox("Kalın yazı")
-        self.chk_bold.setChecked(self.s.font_bold)
-        self.chk_bold.toggled.connect(self._on_bold)
-        settings_root.addWidget(g_view)
-
-        g_perf = QGroupBox("Performans")
-        f_perf = QFormLayout(g_perf)
-        f_perf.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
-        f_perf.setVerticalSpacing(6)
-        self.cb_preset = QComboBox()
-        for key, name in PRESET_NAMES.items():
-            self.cb_preset.addItem(name, key)
-        self.cb_preset.setCurrentIndex(max(0, self.cb_preset.findData(self.s.speed_preset)))
-        self.cb_preset.currentIndexChanged.connect(self._on_preset)
-        f_perf.addRow("Hız modu:", self.cb_preset)
-
-        # Bunu onay kutusu yerine açık bir model seçimi olarak tutuyoruz.
-        # Böylece kullanıcının hangi PaddleOCR sürümünün seçili olduğu net olur.
-        self.cb_paddle_model = QComboBox()
-        self.cb_paddle_model.addItem("Mobil — hızlı (önerilen)", True)
-        self.cb_paddle_model.addItem("Sunucu — daha doğru, daha yavaş", False)
-        self.cb_paddle_model.setCurrentIndex(
-            max(0, self.cb_paddle_model.findData(self.s.paddle_mobile))
-        )
-        self.cb_paddle_model.currentIndexChanged.connect(self._on_paddle_speed_changed)
-        self.lbl_paddle_model = QLabel("PaddleOCR sürümü:")
-        f_perf.addRow(self.lbl_paddle_model, self.cb_paddle_model)
-
-        self.sp_settle = QSpinBox()
-        self.sp_settle.setRange(0, 2000)
-        self.sp_settle.setSingleStep(50)
-        self.sp_settle.setSuffix(" ms")
-        self.sp_settle.setValue(self.s.settle_ms)
-        self.sp_settle.valueChanged.connect(lambda v: setattr(self.s, "settle_ms", v))
-        f_perf.addRow("Kaydırma durunca bekle:", self.sp_settle)
-
-        self.chk_scroll = QCheckBox("kaydırmayı takip et")
-        self.chk_scroll.setChecked(self.s.scroll_tracking)
-        self.chk_scroll.toggled.connect(lambda v: setattr(self.s, "scroll_tracking", v))
-
-        self.chk_manga = QCheckBox("japonca için manga-ocr kullan")
-        self.chk_manga.setChecked(self.s.use_manga_ocr)
-        self.chk_manga.toggled.connect(self._on_manga_enabled)
-        self.cb_manga_device = QComboBox()
-        self.cb_manga_device.addItem('Otomatik — izole GPU / CPU', 'auto')
-        self.cb_manga_device.addItem('GPU — izole CUDA', 'cuda')
-        self.cb_manga_device.addItem('CPU — düşük VRAM', 'cpu')
-        self.cb_manga_device.setCurrentIndex(max(0, self.cb_manga_device.findData(self.s.manga_device)))
-        self.cb_manga_device.currentIndexChanged.connect(self._on_manga_device_changed)
-        self.lbl_manga_device = QLabel('manga-ocr cihazı:')
-        f_perf.addRow(self.lbl_manga_device, self.cb_manga_device)
-        self.chk_bubbles = QCheckBox("Konuşma balonlarını ayır")
-        self.chk_bubbles.setChecked(self.s.bubble_detection)
-        self.chk_bubbles.toggled.connect(lambda v: setattr(self.s, "bubble_detection", v))
-        self.cb_model = QComboBox()
-        for folder, name in TRANSLATION_MODELS.items():
-            if (self.s.model_path.parent / folder / "model.bin").exists() or (self.s.model_path.parent / folder / 'adapter-masked/adapter_model.safetensors').exists():
-                self.cb_model.addItem(name, folder)
-        current = self.cb_model.findData(self.s.translation_model)
-        if current >= 0:
-            self.cb_model.setCurrentIndex(current)
-        self.cb_model.currentIndexChanged.connect(self._on_model_changed)
-        f_perf.addRow("Çeviri modeli:", self.cb_model)
-        self.cb_chinese_translation = QComboBox()
-        self.cb_chinese_translation.addItem("İngilizce üzerinden — daha yavaş", True)
-        self.cb_chinese_translation.addItem("Doğrudan + şüpheli terim kontrolü", False)
-        self.cb_chinese_translation.setCurrentIndex(
-            max(0, self.cb_chinese_translation.findData(self.s.chinese_translation_via_english))
-        )
-        self.cb_chinese_translation.setToolTip(
-            "Doğrudan modda yalnızca şüpheli terim bulunan balon yeniden çevrilir. "
-            "İngilizce üzerinden seçeneği tüm Çince balonları iki aşamada çevirir ve daha yavaştır. "
-            "İki seçenek de yereldir. [?] işareti, terim kontrolünün sonuçtan emin olamadığını gösterir."
-        )
-        self.cb_chinese_translation.currentIndexChanged.connect(self._on_chinese_translation_changed)
-        f_perf.addRow("Çince çeviri:", self.cb_chinese_translation)
-        self.btn_clear_context = QPushButton('konuşma hafızasını temizle')
-        self.btn_clear_context.setToolTip('yeni bölüm veya hikâye için oturumluk isimleri ve son konuşmaları temizler; modeli yeniden yüklemez')
-        self.btn_clear_context.clicked.connect(self._clear_context)
-        f_perf.addRow(self.btn_clear_context)
-        model_note = QLabel("Kaliteli model için kurulumda ‘Kaliteli’ seçeneğini seçin.\nNLLB yalnızca ticari olmayan kullanım içindir.")
-        model_note.setWordWrap(True)
-        f_perf.addRow(model_note)
-        self.lbl_devices = QLabel("Cihaz: (başlatınca görünür)")
-        self.lbl_devices.setWordWrap(True)
-        self.lbl_devices.setStyleSheet("font-weight: bold;")
-        f_perf.addRow(self.lbl_devices)
-        settings_root.addWidget(g_perf)
-
-        options = QGroupBox('seçenekler')
-        options_layout = QVBoxLayout(options)
-        for checkbox in (self.chk_visible, self.chk_bold, self.chk_scroll, self.chk_manga, self.chk_bubbles):
-            options_layout.addWidget(checkbox)
-        self.chk_context = QCheckBox('oturumluk isim ve terim tutarlılığı')
-        self.chk_context.setChecked(self.s.session_context)
-        self.chk_context.setToolTip('son 24 farklı konuşmayı ve doğrulanmış isimleri yalnızca ram içinde tutar; önceki konuşmaları nllb girdisine eklemez')
-        self.chk_context.toggled.connect(self._on_context_changed)
-        options_layout.addWidget(self.chk_context)
-        self.chk_usage = QCheckBox('sistem kullanımını göster')
-        self.chk_usage.setChecked(self.s.show_system_usage)
-        self.chk_usage.toggled.connect(lambda checked: self._on_usage_option('show_system_usage', checked))
-        options_layout.addWidget(self.chk_usage)
-        self.usage_checks = {}
-        for key, label in (('gpu', 'gpu kullanım yüzdesi'), ('vram', 'vram kullanım yüzdesi'), ('cpu', 'cpu kullanım yüzdesi')):
-            checkbox = QCheckBox(label)
-            checkbox.setChecked(getattr(self.s, 'show_' + key + '_usage'))
-            checkbox.toggled.connect(lambda checked, k=key: self._on_usage_option('show_' + k + '_usage', checked))
-            self.usage_checks[key] = checkbox
-            options_layout.addWidget(checkbox)
-        settings_root.addWidget(options)
-
-        hk = QLabel(HOTKEYS_TEXT)
-        hk.setStyleSheet("color: gray; font-size: 11px;")
-        hk.setWordWrap(True)
-        settings_root.addWidget(hk)
-        close = QPushButton("Kapat")
-        close.clicked.connect(self.settings_dialog.close)
-        dialog_root.addWidget(close)
-
-        self._update_paddle_model_visibility()
-        self._apply_theme()
-
-    def _show_settings(self) -> None:
-        self.settings_dialog.show()
-        self.settings_dialog.raise_()
-        self.settings_dialog.activateWindow()
-
-    def _clear_context(self) -> None:
-        if self.worker is not None:
-            self.worker.reset_translation_context()
-        self._set_status('konuşma hafızası temizlendi')
-
-    def _on_context_changed(self, enabled: bool) -> None:
-        self.s.session_context = enabled
-        if self.worker is not None:
-            self.worker.reset_translation_context(enabled)
-
-    def _apply_theme(self) -> None:
-        # Glass-inspired gradients are rendered by Qt on all supported Windows versions.
-        # Panel styling is independent of the text overlay's theme and opacity.
-        palettes = {
-            # background, text, surface, border, primary, muted, primary text, complementary control
-            "green": ("#242722", "#f3f5ed", "#30352d", "#535c4b", "#d8ed9b", "#bcc5b2", "#25321a", "#dcb2eb"),
-            "white": ("#f0f2ec", "#293024", "#e4e8de", "#b9c2b0", "#cee799", "#5c6653", "#25321a", "#674484"),
-            "navy": ("#171e2c", "#edf2fc", "#232e41", "#475770", "#a9caff", "#b5c2d8", "#152339", "#f0bc85"),
-            "black": ("#191a1c", "#f3f3f5", "#28292d", "#51525b", "#dedee5", "#bcbcc7", "#202127", "#ededf2"),
-            "sepia": ("#efe5d5", "#423323", "#e4d7c1", "#b7a58b", "#73532d", "#6e5d46", "#fff6e8", "#385d8a"),
-        }
-        bg, fg, surface, border, accent, muted, ink, contrast = palettes.get(self.s.panel_theme, palettes["green"])
-        light = self.s.panel_theme in ("white", "sepia")
-        shine = "rgba(255,255,255,150)" if light else "rgba(255,255,255,30)"
-        check = PROJECT_ROOT / "assets" / "ui" / ("check-light.svg" if light else "check-dark.svg")
-        rail = "rgba(0,0,0,22)" if light else "rgba(255,255,255,28)"
-        glass = f"qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {shine},stop:1 {surface})"
-        self.setStyleSheet(f"""
-            QWidget {{ background: {bg}; color: {fg}; font-family: 'Segoe UI'; font-size: 12px; }}
-            QLabel {{ background: transparent; }}
-            QGroupBox {{ background: {surface}; border: 1px solid {border}; border-radius: 17px;
-                margin-top: 12px; padding: 14px 10px 10px; font-weight: 500; }}
-            QGroupBox::title {{ subcontrol-origin: margin; left: 14px; padding: 0 5px; color: {muted}; }}
-            QPushButton, QComboBox, QSpinBox {{ background: {glass}; border: 1px solid {border};
-                border-radius: 12px; padding: 10px; min-height: 18px; }}
-            QPushButton:hover, QComboBox:hover {{ border-color: {accent}; }}
-            QPushButton:pressed {{ background: {surface}; }}
-            QPushButton:focus, QComboBox:focus, QSpinBox:focus {{ border: 2px solid {accent}; }}
-            QPushButton:disabled {{ color: {muted}; }}
-            QComboBox::drop-down {{ border: 0; width: 20px; }}
-            QComboBox {{ padding-right: 22px; }}
-            QComboBox QAbstractItemView {{ background: {bg}; color: {fg}; selection-background-color: {accent}; selection-color: {ink}; }}
-            QWidget#toolDock {{ background: transparent; border: 0; }}
-            QWidget#toolDock QPushButton {{ background: {glass}; border: 1px solid {border}; border-radius: 17px; padding: 5px; min-height: 24px; }}
-            QWidget#toolDock QPushButton:hover {{ background: {surface}; }}
-            QPushButton#run {{ background: {accent}; color: {ink}; border: 0; border-radius: 15px; font-weight: 600; }}
-            QPushButton#run:hover {{ border: 2px solid {fg}; }}
-            QPushButton#settings {{ padding: 5px; }}
-            QCheckBox {{ spacing: 8px; padding: 5px 0; }}
-            QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {border}; border-radius: 5px; background: {bg}; }}
-            QCheckBox::indicator:checked {{ background: {contrast}; border: 1px solid {contrast}; image: url("{check.as_posix()}"); }}
-            QSlider::groove:horizontal {{ background: {border}; height: 5px; border-radius: 2px; }}
-            QSlider::sub-page:horizontal {{ background: {contrast}; border-radius: 2px; }}
-            QSlider::handle:horizontal {{ background: {contrast}; border: 2px solid {fg}; width: 14px; height: 14px; margin: -6px 0; border-radius: 8px; }}
-            QProgressBar {{ border: 0; background: {rail}; border-radius: 2px; min-height: 5px; max-height: 5px; }}
-            QProgressBar::chunk {{ background: {contrast}; border-radius: 2px; }}
-            QWidget#toolDock QPushButton:focus {{ border: 2px solid {contrast}; }}
-            QWidget#usageRow {{ background: transparent; border: 0; }}
-            QLabel#usageName {{ color: {muted}; background: transparent; font-size: 11px; }}
-            QLabel#usageValue {{ color: {fg}; background: transparent; font-size: 12px; font-weight: 600; }}
-            QDialog QGroupBox {{ padding: 8px 8px 6px; border-radius: 14px; }}
-            QDialog QPushButton, QDialog QComboBox, QDialog QSpinBox {{ padding: 5px 8px; border-radius: 9px; min-height: 17px; }}
-            QDialog QCheckBox {{ padding: 2px 0; }}
-            QLabel#status {{ color: {muted}; padding: 4px; }}
-            QScrollArea {{ border: 0; }}
-        """)
-
-    def _on_panel_theme_changed(self, _idx: int) -> None:
-        self.s.panel_theme = self.cb_panel_theme.currentData()
-        self._apply_theme()
-
-    def _on_theme_changed(self, _idx: int) -> None:
-        self.s.theme = self.cb_theme.currentData()
-        self.overlay.refresh_style()
-
-    def _on_model_changed(self, _idx: int) -> None:
-        folder = self.cb_model.currentData()
-        if not folder or folder == self.s.translation_model:
-            return
-        self.s.translation_model = folder
-        self._set_status("Çeviri modeli değişti. Etkinleşmesi için uygulamayı yeniden başlatın.")
-
-    def _on_usage_option(self, name: str, checked: bool) -> None:
-        setattr(self.s, name, checked)
-        self._apply_usage_visibility()
-        self.s.save()
-
-    def _apply_usage_visibility(self) -> None:
-        enabled = []
-        for key in ('gpu', 'vram', 'cpu'):
-            show = self.s.show_system_usage and getattr(self.s, 'show_' + key + '_usage')
-            self.usage_rows[key].setVisible(show)
-            self.usage_checks[key].setEnabled(self.s.show_system_usage)
-            enabled.append(show)
-        self.usage_group.setVisible(any(enabled))
-        if hasattr(self, 'usage_monitor'):
-            self.usage_monitor.set_enabled(*enabled)
-        # Reclaim hidden rows so the compact panel doesn't retain empty space.
-        self.layout().activate()
-        self.resize(self.width(), self.sizeHint().height())
-
-    def _update_usage(self, values: dict) -> None:
-        for key, value in values.items():
-            bar = getattr(self, key + '_bar')
-            bar.setValue(value if value is not None else 0)
-            self.usage_values[key].setText(f'{value}%' if value is not None else 'kullanılamıyor')
-            source = self.usage_monitor.source if key in ('gpu', 'vram') else 'tüm sistem'
-            detail = 'en yoğun gpu motoru' if key == 'gpu' and source.startswith('windows') else key
-            bar.setToolTip(f'{detail}: {value}% · {source}' if value is not None else f'{key}: ölçüm kullanılamıyor')
+        self.overlay.surfaces_changed.connect(self._on_surfaces_changed)
+        screen = QGuiApplication.primaryScreen()
+        if screen is not None:
+            self.overlay.set_region(screen.geometry())
+        if settings.last_region and len(settings.last_region) == 4:
+            self._apply_region(QRect(*settings.last_region), publish=False)
+        self.overlay.setVisible(settings.overlay_visible)
 
     # ------------------------------------------------------------------ worker
+    def _set_status(self, text: str) -> None:
+        self.status_changed.emit(text)
+
     def _ensure_worker(self) -> None:
-        if self.worker is not None:
+        if self.worker is not None or self._closing or self._closed:
             return
         self.thread = QThread(self)
-        self.worker = TranslationWorker(self.s, self.overlay.is_capture_excluded(),int(self.overlay.winId()))
+        self.worker = TranslationWorker(
+            self.s, self.overlay.is_capture_excluded(), self.overlay.winIds())
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.status.connect(self._set_status)
-        self.worker.devices.connect(self.lbl_devices.setText)
+        self.worker.runtime_adapter.connect(self.runtime_adapter.emit)
+        self.worker.devices.connect(self.devices_changed.emit)
         self.worker.error.connect(self._on_worker_error)
         self.worker.blocks_ready.connect(self.overlay.set_blocks)
         self.worker.clear_requested.connect(self.overlay.clear_blocks)
@@ -528,11 +106,14 @@ class ControlPanel(QWidget):
     def _push_region(self) -> None:
         if self.worker is None or self.region is None:
             return
-        cap = logical_to_capture_rect(self.region)
+        if sys.platform == 'darwin':
+            cap = logical_to_capture_rect(self.region)
+        else:
+            plan = logical_capture_plan(self.region)
+            cap = plan if plan.needs_composition else plan.physical_bounds
         self.worker.set_region(cap, (self.region.width(), self.region.height()))
 
     def _on_hide_request(self, hidden: bool) -> None:
-        # Paylaşılabilir katmanı kendi OCR görüntümüzden geçici olarak çıkar.
         if hidden:
             self.overlay.hide()
             QGuiApplication.processEvents()
@@ -541,29 +122,32 @@ class ControlPanel(QWidget):
         elif self.s.overlay_visible:
             self.overlay.show()
 
-    def _on_overlay_areas_changed(self,areas) -> None:
-        if self.worker:self.worker.set_overlay_areas(areas)
+    def _on_overlay_areas_changed(self, areas) -> None:
+        if self.worker:
+            self.worker.set_overlay_areas(areas)
+
+    def _on_surfaces_changed(self) -> None:
+        if self.worker:
+            self.worker.set_overlay_handles(self.overlay.winIds())
+            self._push_region()
 
     def _on_worker_error(self, msg: str) -> None:
-        self._set_status(f"HATA: {msg}")
-        QMessageBox.critical(self, "hata", menu_text(msg))
         self.running = False
-        self.btn_run.setText("▶  Başlat")
-        if self.thread:
-            self.thread.quit()
-            self.thread.wait(2000)
-        self.worker = None
-        self.thread = None
+        self.running_changed.emit(False)
+        self._set_status(f"HATA: {msg}")
+        self.error.emit(msg)
 
-    # ------------------------------------------------------------------ eylemler
+    # ------------------------------------------------------------------ actions
     def toggle_run(self) -> None:
         if self.region is None:
             self.select_region(start_after=True)
             return
         self._ensure_worker()
+        if self.worker is None:
+            return
         self.running = not self.running
         self.worker.set_active(self.running)
-        self.btn_run.setText("■  Durdur" if self.running else "▶  Başlat")
+        self.running_changed.emit(self.running)
         if not self.running:
             self.overlay.clear_blocks()
             self._set_status("Durduruldu.")
@@ -575,13 +159,17 @@ class ControlPanel(QWidget):
             self.select_region(start_after=False)
             return
         self._ensure_worker()
-        self.worker.force_once()
+        if self.worker:
+            self.worker.force_once()
 
     def toggle_overlay_visible(self) -> None:
-        self.chk_visible.setChecked(not self.chk_visible.isChecked())
+        self.s.overlay_visible = not self.s.overlay_visible
+        pending = self.worker is not None and bool(getattr(self.worker, '_tracking_pending', False))
+        self.overlay.setVisible(self.s.overlay_visible and not pending)
+        self.settings_changed.emit()
 
     def select_region(self, start_after: bool = False) -> None:
-        if self._selector is not None:
+        if self._selector is not None or self._closing or self._closed:
             return
         self._start_after_select = start_after
         self.overlay.clear_blocks()
@@ -591,8 +179,10 @@ class ControlPanel(QWidget):
         self._selector.start()
 
     def _select_fullscreen(self) -> None:
-        screen = QGuiApplication.screenAt(self.geometry().center()) or QGuiApplication.primaryScreen()
-        self._apply_region(screen.geometry())
+        screen = QGuiApplication.screenAt(self.region.center()) if self.region is not None else None
+        screen = screen or QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        if screen is not None:
+            self._apply_region(screen.geometry())
 
     def _on_region_selected(self, rect: QRect) -> None:
         self._selector = None
@@ -603,157 +193,119 @@ class ControlPanel(QWidget):
     def _on_region_cancelled(self) -> None:
         self._selector = None
 
-    def _apply_region(self, rect: QRect) -> None:
+    def _apply_region(self, rect: QRect, publish: bool = True) -> None:
         self.region = QRect(rect)
-        self.s.last_region = [rect.x(), rect.y(), rect.width(), rect.height()]
         self.overlay.set_region(rect)
         if self.s.overlay_visible:
             self.overlay.show()
         self.overlay.flash_border(True)
         QTimer.singleShot(900, lambda: self.overlay.flash_border(False))
-        self.lbl_region.setText(f"{rect.x()},{rect.y()}  {rect.width()}×{rect.height()}")
         self._push_region()
+        if publish:
+            self.region_changed.emit(QRect(rect))
 
-    # ------------------------------------------------------------------ ayar olayları
-    def _on_lang_changed(self, _idx: int) -> None:
-        code = self.cb_lang.currentData()
-        self.s.source_lang = code
-        if code == "ja" and not self.s.use_manga_ocr:
-            # Dikey Japonca için genel OCR yerine manga-ocr gerekir.
-            self.s.use_manga_ocr = True
-            self.chk_manga.blockSignals(True)
-            self.chk_manga.setChecked(True)
-            self.chk_manga.blockSignals(False)
-        self._refresh_ocr_menu()
-        self._update_paddle_model_visibility()
+    # ------------------------------------------------------------------ live settings
+    def set_language(self, lang: str) -> None:
+        self.s.source_lang = lang
         self.overlay.clear_blocks()
         if self.worker:
-            self.worker.set_language(code)
+            self.worker.set_language(lang)
 
-    def _refresh_ocr_menu(self) -> None:
-        """Yüklü durumunu sade biçimde doğrudan motor menüsünde göster."""
-        selected = self.cb_ocr.currentData() or self.s.ocr_engine
-        installed = {
-            "manga_ocr": (importlib.util.find_spec("manga_ocr") is not None
-                          or (PROJECT_ROOT / '.manga-venv' / 'Scripts' / 'python.exe').is_file()),
-            "paddleocr": (importlib.util.find_spec("paddleocr") is not None
-                          and importlib.util.find_spec("paddle") is not None),
-        }
-        mark = lambda key: "Yüklü" if installed[key] else "Eksik"
-        options = (
-            ("Otomatik (önerilen)", "auto"),
-            (f"manga-ocr — Japonca için önerilen ({mark('manga_ocr')})", "manga_ocr"),
-            (f"PaddleOCR — hızlı ({mark('paddleocr')})", "paddleocr"),
-        )
-        self.cb_ocr.blockSignals(True)
-        self.cb_ocr.clear()
-        for text, key in options:
-            self.cb_ocr.addItem(text, key)
-        self.cb_ocr.setCurrentIndex(max(0, self.cb_ocr.findData(selected)))
-        self.cb_ocr.blockSignals(False)
-
-    def _on_ocr_changed(self, _idx: int) -> None:
-        engine = self.cb_ocr.currentData()
+    def apply_ocr_engine(self, engine: str) -> None:
         self.s.ocr_engine = engine
-        self._update_paddle_model_visibility()
         self.overlay.clear_blocks()
         if self.worker:
             self.worker.set_ocr_engine(engine)
-            # OCR motoru değiştiğinde, ekranda aynı sayfa dursa bile yeni motoru tara.
             self.worker.force_once()
         self._set_status("OCR motoru değişti; yeni motor yükleniyor…")
 
-    def _update_paddle_model_visibility(self) -> None:
-        """Mobil/sunucu seçimi yalnızca PaddleOCR elle seçildiğinde anlamlıdır."""
-        show = self.cb_ocr.currentData() == "paddleocr"
-        self.lbl_paddle_model.setVisible(show)
-        self.cb_paddle_model.setVisible(show)
-        show_manga = self.s.source_lang == 'ja' and self.cb_ocr.currentData() in ('auto', 'manga_ocr')
-        self.lbl_manga_device.setVisible(show_manga)
-        self.cb_manga_device.setVisible(show_manga)
+    def apply_paddle_model(self, mobile: bool) -> None:
+        self.s.paddle_mobile = bool(mobile)
+        if self.worker and self.s.ocr_engine in ("auto", "paddleocr"):
+            self.worker.set_ocr_engine(self.s.ocr_engine)
+            self.worker.force_once()
+        self._set_status("PaddleOCR modeli değişti; sonraki taramada kullanılacak.")
 
-    def _on_manga_device_changed(self, _idx: int) -> None:
-        self.s.manga_device = self.cb_manga_device.currentData()
+    def apply_bubble_detection(self, enabled: bool) -> None:
+        self.s.bubble_detection = bool(enabled)
+        if self.worker and self.s.ocr_engine in ("auto", "paddleocr"):
+            self.worker.set_ocr_engine(self.s.ocr_engine)
+            self.worker.force_once()
+
+    def apply_manga_device(self, device: str) -> None:
+        self.s.manga_device = device
         if self.worker and self.s.source_lang == 'ja':
             self.worker.set_ocr_engine(self.s.ocr_engine)
             self.worker.force_once()
         self._set_status('manga-ocr cihazı değişti; izole yardımcı işlem yeniden yüklenecek.')
 
-    def _on_manga_enabled(self, enabled: bool) -> None:
-        self.s.use_manga_ocr = enabled
+    def apply_manga_enabled(self, enabled: bool) -> None:
+        self.s.use_manga_ocr = bool(enabled)
         if self.worker and self.s.source_lang == 'ja' and self.s.ocr_engine == 'auto':
             self.worker.set_ocr_engine(self.s.ocr_engine)
             self.worker.force_once()
 
-    def _on_paddle_speed_changed(self, _idx: int) -> None:
-        self.s.paddle_mobile = bool(self.cb_paddle_model.currentData())
-        if self.worker and self.s.ocr_engine in ("auto", "paddleocr"):
-            self.worker.set_ocr_engine(self.s.ocr_engine)
-            self.worker.force_once()
-        self._set_status("PaddleOCR hızı değişti; sonraki taramada yeni model kullanılacak.")
-
-    def _on_chinese_translation_changed(self, _idx: int) -> None:
-        self.s.chinese_translation_via_english = bool(self.cb_chinese_translation.currentData())
+    def apply_chinese_translation(self, via_english: bool) -> None:
+        self.s.chinese_translation_via_english = bool(via_english)
         if self.worker:
             self.worker.force_once()
         self._set_status("Çince çeviri yolu değişti; sonraki taramada uygulanacak.")
 
-    def _on_preset(self, _idx: int) -> None:
-        self.s.apply_preset(self.cb_preset.currentData())
-        self.sp_settle.blockSignals(True)
-        self.sp_settle.setValue(self.s.settle_ms)
-        self.sp_settle.blockSignals(False)
+    def apply_preset(self, name: str) -> None:
+        self.s.apply_preset(name)
+        self.settings_changed.emit()
 
-    def _on_visible_changed(self, v: bool) -> None:
-        self.s.overlay_visible = v
-        self.overlay.setVisible(v)
-        self.btn_overlay.setText("Çeviriyi gizle" if v else "Çeviriyi göster")
-
-    def _on_opacity(self, v: int) -> None:
-        self.s.overlay_opacity = v / 100
+    def apply_visual(self) -> None:
         self.overlay.refresh_style()
 
-    def _on_font(self, f: QFont) -> None:
-        self.s.font_family = f.family()
-        self.overlay.refresh_style()
+    def apply_scroll_tracking(self, enabled: bool) -> None:
+        self.s.scroll_tracking = bool(enabled)
+        if self.worker:
+            self.worker.set_scroll_tracking(self.s.scroll_tracking)
 
-    def _on_maxfont(self, v: int) -> None:
-        self.s.max_font_px = v
-        self.overlay.refresh_style()
-
-    def _on_bold(self, v: bool) -> None:
-        self.s.font_bold = v
-        self.overlay.refresh_style()
-
-    def _set_status(self, text: str) -> None:
-        self.lbl_status.setText(text)
-
-    # ------------------------------------------------------------------ kapanış
-    def closeEvent(self, e) -> None:
-        self.usage_monitor.close()
-        # Model initialization/inference may outlast the old 4-second wait.
-        # Keep Qt alive until the worker has closed its isolated child process.
-        if self.thread is not None and self.thread.isRunning():
-            if not getattr(self, '_close_pending', False):
-                self._close_pending = True
-                self.setEnabled(False)
-                self._set_status('Modeller kapatılıyor…')
-                self.worker.stop()
-                self.thread.finished.connect(self.close)
-                self.thread.quit()
-            e.ignore()
-            return
-        self.s.save()
+    def clear_context(self) -> None:
+        self.overlay.clear_blocks()
         if self.worker is not None:
-            self.worker.stop()
-        if self.thread is not None:
-            self.thread.quit()
-            self.thread.wait(4000)
-        if self.hotkeys is not None:
+            self.worker.reset_translation_context()
+        self._set_status('konuşma hafızası temizlendi')
+
+    def reset_context_enabled(self, enabled: bool) -> None:
+        if self.worker is not None:
+            self.worker.reset_translation_context(enabled)
+
+    # ------------------------------------------------------------------ shutdown
+    def shutdown(self) -> None:
+        if self._closing or self._closed:
+            return
+        self._closing = True
+        if self.running:
+            self.running = False
+            self.running_changed.emit(False)
+        if self._selector is not None:
             try:
-                self.hotkeys.stop()
+                self._selector.close()
             except Exception:
                 pass
+            self._selector = None
+        thread = self.thread
+        if thread is not None and thread.isRunning():
+            thread.finished.connect(self._finalize_close)
+            if self.worker is not None:
+                self.worker.stop()
+            thread.quit()
+        else:
+            self._finalize_close()
+
+    def _finalize_close(self) -> None:
+        if self._finish_emitted:
+            return
+        self._finish_emitted = True
+        self._closed = True
+        self._closing = False
         self.overlay.close()
-        super().closeEvent(e)
-        QGuiApplication.quit()
+        self.worker = None
+        self.thread = None
+        self.closed.emit()
+
+    def close(self) -> None:
+        self.shutdown()

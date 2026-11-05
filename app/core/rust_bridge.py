@@ -17,7 +17,7 @@ class Rect(c.Structure):
 _lib=None
 _error=''
 stats=dict(group_calls=0,overlap_calls=0,fallbacks=0)
-if sys.platform == 'win32' and os.environ.get('MERGEN_RUST_ENABLED', '1') != '0':
+if sys.platform == 'win32' and os.environ.get('MERGEN_RUST_ENABLED', '0') != '0':
     try:
         _lib=c.CDLL(str(Path(__file__).with_name('mergen_rust.dll')))
         _lib.mergen_geometry_abi.restype=c.c_uint32

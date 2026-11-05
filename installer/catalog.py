@@ -1,6 +1,7 @@
 """Explicit installation allowlist; no arbitrary package names from the UI."""
 OCR_NAMES={'detection':'PP-OCRv5_mobile_det','recognition':'PP-OCRv5_mobile_rec',
-           'orientation':'PP-LCNet_x1_0_textline_ori','korean':'korean_PP-OCRv5_mobile_rec'}
+           'orientation':'PP-LCNet_x1_0_textline_ori','korean':'korean_PP-OCRv5_mobile_rec',
+           'detection_server':'PP-OCRv5_server_det','recognition_server':'PP-OCRv5_server_rec'}
 COMPONENTS={
  'cpu': {'title':'CPU çalışma ortamı','kind':'environment','backend':'cpu','detail':'ekran kartından bağımsız cpu çeviri ve ocr ortamı.'},
  'nvidia': {'title':'NVIDIA çeviri ve manga-ocr','kind':'environment','backend':'nvidia','detail':'CUDA · ekran kartı ve gerçek model testi gerekir.'},
@@ -13,6 +14,9 @@ COMPONENTS={
  'ocr-torch': {'title':'PaddleOCR Transformers modelleri','kind':'ocr','family':'transformers','names':list(OCR_NAMES.values())[:3],'detail':'AMD / Intel için deneysel OCR yolu.'},
  'korean-paddle': {'title':'Korece · Paddle modeli','kind':'ocr','family':'paddle','names':[OCR_NAMES['korean']],'detail':'CPU / NVIDIA için Korece tanıma modeli.'},
  'korean-torch': {'title':'Korece · Transformers modeli','kind':'ocr','family':'transformers','names':[OCR_NAMES['korean']],'detail':'Deneysel · model paketi mevcut değilse kurulum tamamlanmaz.'},
+ 'ocr-paddle-server': {'title':'PaddleOCR sunucu modelleri','kind':'ocr','family':'paddle',
+    'names':[OCR_NAMES['detection_server'],OCR_NAMES['recognition_server']],
+    'detail':'isteğe bağlı · mobil modelden daha doğru, daha yavaş ve daha fazla vram kullanır.'},
  'manga': {'title':'Japonca manga-ocr modeli','kind':'manga','repo':'kha-white/manga-ocr-base','detail':'Japonca konuşma balonları için.'},
 }
 COMMON=['transformers==5.19.0','sentencepiece==0.2.2','Pillow==12.3.0','numpy==2.3.5',

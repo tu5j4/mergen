@@ -38,7 +38,8 @@ def main():
             import json
             from app.core import rust_bridge
             from app.core.frame_metrics import AdaptivePoll
-            native = rust_bridge.require_native() if sys.platform == 'win32' else {'loaded': False}
+            native = (rust_bridge.require_native() if sys.platform == 'win32' and os.environ.get('MERGEN_RUST_ENABLED', '0') == '1'
+                      else {'loaded': False, 'engine': 'python geometry'})
             window=engine.rootObjects()[0]
             window.grabWindow().save(str(DATA_ROOT/'packaged-preview.png'))
             (DATA_ROOT/'smoke-result.json').write_text(json.dumps({'qml':True,'version':controller.state['version'],

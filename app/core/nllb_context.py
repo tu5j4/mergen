@@ -1,7 +1,29 @@
 """Mergen 1.3b v3 serving, preserving the trained cross-attention boundary."""
 from contextlib import nullcontext
 from pathlib import Path
+import os
 from .nllb_current_mask import generate, generate_batch
+
+
+def cpu_inference_config(logical_cores=None, available_bytes=None):
+    """Leave half the logical CPUs free and bound short-passage batch memory."""
+    if logical_cores is None:
+        logical_cores=os.cpu_count() or 2
+        try:
+            import psutil
+            logical_cores=min(logical_cores,len(psutil.Process().cpu_affinity()))
+        except Exception:  # Optional telemetry must not prevent model startup.
+            pass
+    logical_cores=max(1,int(logical_cores))
+    if available_bytes is None:
+        try:
+            import psutil
+            available_bytes=psutil.virtual_memory().available
+        except Exception:  # Optional telemetry must not prevent model startup.
+            available_bytes=0
+    threads=max(1,min(8,logical_cores//2))
+    batch=2 if logical_cores>=12 and available_bytes>=8*1024**3 else 1
+    return threads,batch
 
 
 class ContextModel:
@@ -11,12 +33,13 @@ class ContextModel:
         from peft import PeftModel
         self.device=device
         self.autocast=device.startswith('cuda') and torch.cuda.is_bf16_supported()
-        torch.set_num_threads(12)
+        threads,cpu_batch=cpu_inference_config()
+        torch.set_num_threads(threads)
         directory=Path(directory)
         base=AutoModelForSeq2SeqLM.from_pretrained(directory/'base-bf16',local_files_only=True,
             dtype=torch.bfloat16 if self.autocast else torch.float32,attn_implementation='sdpa')
         self.model=PeftModel.from_pretrained(base,directory/'adapter-masked',local_files_only=True).to(device).eval()
-        self.batch_size=3 if device.startswith('cuda') else 1
+        self.batch_size=3 if device.startswith('cuda') else cpu_batch if device=='cpu' else 1
         if device.startswith('cuda'):
             # Serving-only merge: no save_pretrained and no model-file writes.
             self.model=self.model.merge_and_unload(safe_merge=True).eval()

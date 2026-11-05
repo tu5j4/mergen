@@ -15,8 +15,6 @@ yukarı/aşağı kaydırınca tekrar OCR yapılmadan anında görünür.
 from __future__ import annotations
 
 import queue
-import re
-from difflib import SequenceMatcher
 import json
 import threading
 import time
@@ -27,9 +25,11 @@ import numpy as np
 from PySide6.QtCore import QObject, Signal, Slot
 
 from ..config import LANGS, PROJECT_ROOT, Settings
-from .capture import ScreenCapturer, estimate_vshift, frame_diff, thumbnail_gray, to_gray
+from .capture import ScreenCapturer, thumbnail_gray, to_gray
+from .scroll_tracker import ScrollTracker
 from .session_context import SessionContext
 from .frame_metrics import AdaptivePoll, FrameMetrics
+from .runtime_adapter import adapter_selection, ocr_adapter
 
 EDGE_PX = 3          # kenara bu kadar yakın balonlar "yarım" sayılır
 STRIP_MARGIN = 48    # yeni şerit okunurken önceki alana taşma payı (px)
@@ -71,27 +71,7 @@ def _overlap_ratio(a: dict, b: dict) -> float:
     return (ix * iy) / max(1.0, min(a["w"] * a["h"], b["w"] * b["h"]))
 
 
-def _more_complete(new: dict, old: dict) -> bool:
-    """Only replace the same English passage when a reread preserves its words.
-
-    Length alone is not quality: require matching language/panel, spatial
-    containment and almost all old words in order, plus at least two new words.
-    """
-    if new.get('source_lang') != 'en' or old.get('source_lang') != 'en':
-        return False
-    if new.get('panel') != old.get('panel'):
-        return False
-    old_area, new_area = old['w'] * old['h'], new['w'] * new['h']
-    ix = max(0, min(new['x'] + new['w'], old['x'] + old['w']) - max(new['x'], old['x']))
-    iy = max(0, min(new['y'] + new['h'], old['y'] + old['h']) - max(new['y'], old['y']))
-    if ix * iy < old_area * .85 or not old_area * .9 <= new_area <= old_area * 3:
-        return False
-    before = re.findall(r"[a-z0-9]+", old.get('src', '').lower())
-    after = re.findall(r"[a-z0-9]+", new.get('src', '').lower())
-    if len(before) < 2 or len(after) < len(before) + 2:
-        return False
-    matches = sum(b.size for b in SequenceMatcher(None, before, after, autojunk=False).get_matching_blocks())
-    return matches >= len(before) * .9
+from .partial_update import balloon_replaces_fragments as _balloon_replaces_fragments, more_complete as _more_complete
 
 
 class TranslationWorker(QObject):
@@ -101,6 +81,7 @@ class TranslationWorker(QObject):
     blocks_ready = Signal(list)
     clear_requested = Signal()
     hide_request = Signal(bool)
+    runtime_adapter = Signal(dict)
 
     def __init__(self, settings: Settings, overlay_excluded: bool, overlay_handle=None) -> None:
         super().__init__()
@@ -141,12 +122,20 @@ class TranslationWorker(QObject):
         self._poll_policy = AdaptivePoll()
         self._frame_metrics = FrameMetrics()
         self._dispatch_started = None
+        self._tracker = ScrollTracker(change_threshold=settings.change_threshold,
+                                      scroll_tracking=settings.scroll_tracking)
+        self._tracking_hidden = False
+        self._tracking_pending = False
         self._reset_state_vars()
 
     # ------------------ thread-safe API ------------------
     def set_region(self, cap_rect, logical_size) -> None:
         with self._lock:
-            self._region = (*cap_rect, *logical_size)
+            from .capture_geometry import CapturePlan
+            if isinstance(cap_rect, CapturePlan):
+                self._region = (*cap_rect.physical_bounds, *logical_size, cap_rect)
+            else:
+                self._region = (*cap_rect, *logical_size)
             self._region_version += 1
 
     def set_active(self, active: bool) -> None:
@@ -166,6 +155,17 @@ class TranslationWorker(QObject):
             self._ocr_engine = engine
             self._ocr_version += 1
             self.s.ocr_engine = engine
+
+    def set_overlay_handles(self, handles) -> None:
+        with self._lock:
+            self._overlay_handle = tuple(handles)
+
+    def set_scroll_tracking(self, enabled: bool) -> None:
+        with self._lock:
+            self.s.scroll_tracking = bool(enabled)
+            self._tracker.set_scroll_tracking(enabled)
+            self._tracking_hidden = False
+            self._tracking_pending = False
 
     def stop(self) -> None:
         with self._lock:
@@ -203,6 +203,8 @@ class TranslationWorker(QObject):
         self._retry_after = 0.0
         self._job_full_retry = False
         self._retry_full_viewport = False
+        self._pending_scan = None
+        self._edge_rechecked = {}
 
     def _write_scan_diagnostic(self, diagnostic: dict) -> None:
         # Only stage/count/geometry metadata: never store the captured image
@@ -248,6 +250,29 @@ class TranslationWorker(QObject):
         else:
             self._emit_clear()
 
+    # ------------------ kaydırma takibi ------------------
+    def _hide_for_tracking(self) -> None:
+        # Uncertain coordinates: keep the cached translations but do not show
+        # them at a guessed position.
+        self._tracking_pending = True
+        if self._tracking_hidden or not self._overlay_has_content or not self.s.overlay_visible:
+            return
+        self._tracking_hidden = True
+        self._hide_ack.clear()
+        self.hide_request.emit(True)
+
+    def _unhide_for_tracking(self) -> None:
+        self._tracking_pending = False
+        if not self._tracking_hidden:
+            return
+        self._tracking_hidden = False
+        self.hide_request.emit(False)
+
+    def _reset_tracker(self) -> None:
+        self._tracker.reset()
+        self._unhide_for_tracking()
+        self._tracking_pending = False
+
     # ------------------ model yükleme ------------------
     def _load_translator(self) -> None:
         from .translator import Translator
@@ -284,7 +309,10 @@ class TranslationWorker(QObject):
         # Isınma: ilk çağrıdaki gecikmeyi kullanıcı hissetmesin
         try:
             dummy = np.full((64, 256, 3), 255, np.uint8)
+            self.runtime_adapter.emit(ocr_adapter(self.ocr, self.s.ocr_backend, self.s.manga_backend))
             self.ocr.process(dummy)
+            self.runtime_adapter.emit(adapter_selection(self.translator.device, self.s.translation_backend,
+                                                        getattr(self.translator, 'adapter', None)))
             self.translator.translate(["ok"], LANGS[lang]["nllb"], beam_size=1)
         except Exception:
             pass
@@ -301,14 +329,36 @@ class TranslationWorker(QObject):
     # ------------------ yakalama ------------------
     def _grab(self, capturer: ScreenCapturer, region: tuple) -> np.ndarray | None:
         x, y, w, h = region[:4]
-        need_hide = (not self._overlay_excluded) and self._overlay_has_content and self.s.overlay_visible
+        plan = region[6] if len(region) > 6 else None
+        need_hide = ((not self._overlay_excluded) and self._overlay_has_content
+                     and self.s.overlay_visible)
+        if self._tracking_hidden and not self._overlay_excluded:
+            # The uncertain-tracking path already asked the UI to hide. Never
+            # capture while that request is still in flight, or the next frame
+            # would contain our own translations.
+            if not self._hide_ack.wait(0.3):
+                return None
+            need_hide = False
         self._capture_requires_hide = need_hide
         if need_hide and self._overlay_handle and len(region)>=6:
             with self._lock:areas=list(self._overlay_areas)
             if areas:
-                sx,sy=w/max(1,region[4]),h/max(1,region[5])
-                physical=[(a*sx,b*sy,c*sx,d*sy) for a,b,c,d in areas]
-                image=capturer.grab_under_overlay(x,y,w,h,self._overlay_handle,physical)
+                if plan is not None:
+                    from .capture_geometry import capture_canvas
+                    pieces = iter(plan.pieces)
+                    def grab_piece(px, py, pw, ph):
+                        piece = next(pieces)
+                        screen = piece.screen
+                        scale = screen.dpr
+                        ox = screen.physical_origin[0] + (plan.logical_rect[0] - screen.logical_rect[0]) * scale - px
+                        oy = screen.physical_origin[1] + (plan.logical_rect[1] - screen.logical_rect[1]) * scale - py
+                        physical = [(ox+a*scale, oy+b*scale, c*scale, d*scale) for a,b,c,d in areas]
+                        return capturer.grab_under_overlay(px,py,pw,ph,self._overlay_handle,physical)
+                    image = capture_canvas(plan, grab_piece)
+                else:
+                    sx,sy=w/max(1,region[4]),h/max(1,region[5])
+                    physical=[(a*sx,b*sy,c*sx,d*sy) for a,b,c,d in areas]
+                    image=capturer.grab_under_overlay(x,y,w,h,self._overlay_handle,physical)
                 if image is not None:
                     self._capture_requires_hide = False
                     return image
@@ -321,7 +371,7 @@ class TranslationWorker(QObject):
                     # Never OCR our own translations if the UI did not hide in time.
                     return None
                 time.sleep(0.06)
-            return capturer.grab(x, y, w, h)
+            return capturer.grab_plan(plan) if plan is not None else capturer.grab(x, y, w, h)
         finally:
             if need_hide:
                 self.hide_request.emit(False)
@@ -332,7 +382,7 @@ class TranslationWorker(QObject):
 
     # ------------------ OCR işi (ayrı thread) ------------------
     def _ocr_job(self, crop: np.ndarray, top: int, gen: int, lang: str, beam: int,
-                 context=_CONTEXT_UNSET, viewport: tuple[int, int] | None = None):
+                 context=_CONTEXT_UNSET, viewport: tuple[int, int] | None = None, scan=None):
         t_start = time.perf_counter()
         ocr_t = tr_t = 0.0
         n = 0
@@ -357,7 +407,21 @@ class TranslationWorker(QObject):
             true_edges.add('bottom')
         diagnostic["viewport_edges"] = sorted(true_edges)
         needs_full_retry = False
-        it = self.ocr.process_iter(crop, EDGE_PX, frozenset(true_edges))
+        engine = scan["ocr"] if scan is not None else self.ocr
+        self.runtime_adapter.emit(ocr_adapter(engine, self.s.ocr_backend, self.s.manga_backend))
+        if scan is not None and not scan.get('started'):
+            reset_scan = getattr(engine, 'reset_scan', None)
+            if reset_scan is not None:
+                reset_scan()
+            scan['started'] = True
+        bubbles = scan.get('bubbles') if isinstance(scan, dict) else None
+        if bubbles is not None:
+            try:
+                it = engine.process_iter(crop, EDGE_PX, frozenset(true_edges), bubbles=bubbles)
+            except TypeError:
+                it = engine.process_iter(crop, EDGE_PX, frozenset(true_edges))
+        else:
+            it = engine.process_iter(crop, EDGE_PX, frozenset(true_edges))
         while True:
             ta = time.perf_counter()
             finished = False
@@ -398,6 +462,9 @@ class TranslationWorker(QObject):
                 ta = time.perf_counter()
                 diagnostic["stage"] = "translation"
                 self._write_scan_diagnostic(diagnostic)
+                self.runtime_adapter.emit(adapter_selection(getattr(self.translator, 'device', None),
+                                                            self.s.translation_backend,
+                                                            getattr(self.translator, 'adapter', None)))
                 trs = self.translator.translate(
                     [b.text for b in part], src, beam_size=beam,
                     via_english=self.s.chinese_translation_via_english,
@@ -421,9 +488,20 @@ class TranslationWorker(QObject):
                     if context is not None:
                         context.remember(b.text, t, src, panel=b.panel)
                     bg = tuple(int(v) for v in np.median(c.reshape(-1, 3), axis=0)) if c.size else (255, 255, 255)
+                    # OCR may return a plausible complete line just before a
+                    # real viewport edge, although the passage continues below.
+                    # Keep provenance on the cache row, never on display text.
+                    band = max(EDGE_PX, min(96, 2 * (b.y2 - b.y1)))
+                    edge_partial_edges = tuple(edge for edge, near in (
+                        ('top', 'top' in true_edges and b.y1 <= band),
+                        ('bottom', 'bottom' in true_edges and ch - b.y2 <= band)) if near)
                     items.append({"x": b.x1, "y": top + b.y1, "w": b.x2 - b.x1, "h": b.y2 - b.y1,
                                   "text": t, "src": b.text, "bg": bg, "vertical": b.vertical,
-                                  "source_lang": lang, "panel": b.panel})
+                                  "source_lang": lang, "panel": b.panel,
+                                  "confidence": getattr(b, "confidence", None),
+                                  "balloon": bool(getattr(b, "balloon", False)),
+                                  "edge_partial": bool(edge_partial_edges),
+                                  "edge_partial_edges": edge_partial_edges})
                 n += len(items)
                 diagnostic["translated"] = n
                 if items:
@@ -436,12 +514,17 @@ class TranslationWorker(QObject):
                 break
 
         total = time.perf_counter() - t_start
-        diagnostic["stage"] = "complete"
+        deferred = bool(getattr(engine, "has_pending_retries", False))
+        predictions = int(getattr(engine, "last_predict_count", 0))
+        diagnostic["stage"] = "deferred" if deferred else "complete"
+        diagnostic["ocr_predict_calls"] = predictions
+        if scan is not None:
+            scan.update(pending=deferred, predictions=predictions, full_retry=needs_full_retry)
         diagnostic["elapsed_ms"] = round(total * 1000)
         diagnostic["ocr_ms"] = round(ocr_t * 1000)
         diagnostic["translation_ms"] = round(tr_t * 1000)
         self._write_scan_diagnostic(diagnostic)
-        if gen == self._gen:
+        if gen == self._gen and scan is None:
             self._job_full_retry = needs_full_retry
         self.status.emit(f"{n} balon  •  toplam {total*1000:.0f} ms  "
                          f"(OCR {ocr_t*1000:.0f} ms, çeviri {tr_t*1000:.0f} ms, şerit {ch}px)")
@@ -467,11 +550,24 @@ class TranslationWorker(QObject):
                 overlaps=[self.content_blocks[i] for i in indices]
                 if overlaps:
                     # Never let a broad OCR box collapse neighboring passages.
-                    if len(overlaps) != 1 or not _more_complete(it, overlaps[0]):
-                        continue
-                    index = indices[0]
-                    self.content_blocks[index] = it
-                    if native is not None:native.replace(index,it)
+                    if len(overlaps) != 1:
+                        if _balloon_replaces_fragments(it, overlaps):
+                            for idx in sorted(indices, reverse=True):
+                                del self.content_blocks[idx]
+                            self.content_blocks.append(it)
+                            self._frame_metrics.counts['partial_upgrades'] += 1
+                            native = rect_index(self.content_blocks)
+                            self._rust_rectangles = native
+                        else:
+                            self._frame_metrics.counts['partial_multi_overlap_observed'] += 1
+                            continue
+                    else:
+                        if not _more_complete(it, overlaps[0]):
+                            continue
+                        index = indices[0]
+                        self.content_blocks[index] = it
+                        self._frame_metrics.counts['partial_upgrades'] += 1
+                        if native is not None:native.replace(index,it)
                 else:
                     self.content_blocks.append(it)
                     if native is not None:native.append(it)
@@ -500,6 +596,9 @@ class TranslationWorker(QObject):
         if self._job is None or not self._job.done():
             return
         job, self._job = self._job, None
+        scan = getattr(job, '_scan_record', None)
+        if isinstance(scan, dict) and scan.get('gen', self._gen) != self._gen:
+            return
         try:
             gen, kt, kb = job.result()
         except Exception as e:
@@ -515,12 +614,26 @@ class TranslationWorker(QObject):
             # filter deduplicates them) and never mark the failed scan processed.
             retry = self._job_failures <= 2
             if retry:
+                if isinstance(scan, dict):
+                    self._pending_scan = scan
                 self._attempted_scroll = None
                 self._retry_after = time.monotonic() + 1.0
+            else:
+                self._pending_scan = None
+                self._attempted_scroll = self.scroll_y
             self.status.emit(f"Hata: {e}" + (" — yeniden denenecek" if retry else " — Tek çevir ile tekrar deneyin"))
             return
         self._job_failures = 0
         self._drain_partials()
+        if isinstance(scan, dict) and gen == self._gen:
+            self._frame_metrics.counts['ocr_predict_calls'] += scan.get('predictions', 0)
+            if scan.get('pending'):
+                self._frame_metrics.counts['ocr_deferred_slices'] += 1
+                self._pending_scan = scan
+                self._attempted_scroll = None
+                return
+            self._pending_scan = None
+            self._job_full_retry = scan.get('full_retry', False)
         if gen == self._gen and kt is not None and kb > kt:
             self.processed = _merge_intervals(self.processed + [[kt, kb]])
         if gen == self._gen and self._job_full_retry:
@@ -528,11 +641,45 @@ class TranslationWorker(QObject):
             self._attempted_scroll = None
         self._job_full_retry = False
 
+    def _edge_recovery_candidates(self, viewport):
+        """Bound rereads while materially more of an edge passage enters view.
+
+        Keys contain geometry only. Pruning against the bounded live cache keeps
+        this bookkeeping bounded too; stationary frames never trigger OCR.
+        """
+        live = set()
+        candidates = []
+        for block in self.content_blocks:
+            edges = tuple(block.get('edge_partial_edges', ()))
+            if not block.get('edge_partial') or not edges:
+                continue
+            key = (block['x'], block['y'], block['w'], block['h'],
+                   block.get('source_lang'), edges)
+            live.add(key)
+            band = max(EDGE_PX, min(96, 2 * block['h']))
+            top, bottom = block['y'], block['y'] + block['h']
+            attempts, last_exposure = self._edge_rechecked.get(key, (0, None))
+            exposure = min(top - viewport[0] if edge == 'top'
+                           else viewport[1] - bottom for edge in edges)
+            if (attempts < 3 and (last_exposure is None or exposure-last_exposure >= 96) and
+                    top >= viewport[0] and bottom <= viewport[1] and
+                    all(top - viewport[0] > band if edge == 'top'
+                        else viewport[1] - bottom > band for edge in edges)):
+                candidates.append((key, block, edges))
+        self._edge_rechecked = {key: value for key, value in self._edge_rechecked.items() if key in live}
+        return candidates
+
     def _maybe_submit(self, img: np.ndarray, lang: str, force: bool) -> None:
         if self._job is not None:
             return
         if not force and time.monotonic() < self._retry_after:
             return
+        pending = self._pending_scan
+        if pending is not None:
+            if not force and pending['gen'] == self._gen and pending['lang'] == lang:
+                self._submit_scan(pending)
+                return
+            self._pending_scan = None
         if not force and self._attempted_scroll == self.scroll_y:
             return
         if self._attempted_scroll is not None and self._attempted_scroll != self.scroll_y:
@@ -541,24 +688,33 @@ class TranslationWorker(QObject):
         H = img.shape[0]
         vp = (self.scroll_y, self.scroll_y + H)
         missing = _subtract(vp, self.processed)
-        if not missing and not self._retry_full_viewport:
+        recovery = self._edge_recovery_candidates(vp)
+        if not missing and not recovery and not self._retry_full_viewport:
             return
         if self._retry_full_viewport:
             a, b = vp
             self._retry_full_viewport = False
-        else:
+        elif missing:
             a = max(vp[0], missing[0][0] - STRIP_MARGIN)
             b = min(vp[1], missing[-1][1] + STRIP_MARGIN)
+        else:
+            a, b = vp[1], vp[0]
+        for _, block, edges in recovery:
+            # Include the cached beginning and the newly revealed continuation.
+            # The existing cut-strip full-viewport retry remains the safety net.
+            a = min(a, vp[0] if 'top' in edges else max(vp[0], block['y'] - STRIP_MARGIN))
+            b = max(b, vp[1] if 'bottom' in edges else min(vp[1], block['y'] + block['h'] + STRIP_MARGIN))
+        frame_bubbles = None
         if self.s.bubble_detection and (a, b) != vp:
             # A 48px scroll margin can slice a three-line Korean balloon into
             # separate inputs. Expand the strip to whole visible balloons,
             # without a second OCR/model pass or a full-viewport rescan.
-            from .bubbles import detect_bubbles
-            bubbles = detect_bubbles(img, self.s.bubble_min_area)
+            from .bubbles import detect_bubbles, shift_bubbles
+            frame_bubbles = detect_bubbles(img, self.s.bubble_min_area)
             changed = True
             while changed:
                 changed = False
-                for balloon in bubbles:
+                for balloon in frame_bubbles:
                     y1, y2 = self.scroll_y + balloon.y1, self.scroll_y + balloon.y2
                     if y1 < b and y2 > a:
                         na, nb = min(a, max(vp[0], y1 - 8)), max(b, min(vp[1], y2 + 8))
@@ -566,14 +722,32 @@ class TranslationWorker(QObject):
                             a, b, changed = na, nb, True
         if b - a < 24:
             return
-        crop = np.ascontiguousarray(img[a - self.scroll_y:b - self.scroll_y])
+        crop = np.array(img[a - self.scroll_y:b - self.scroll_y], copy=True, order="C")
+        strip_bubbles = (shift_bubbles(frame_bubbles, self.scroll_y - a, b - a)
+                         if frame_bubbles is not None else None)
         self.status.emit("Okunuyor…")
         context = self._session_context.fork() if self._context_enabled else None
+        scan = dict(crop=crop, top=a, gen=self._gen, lang=lang,
+                    beam=self.s.beam_size, context=context, viewport=vp, ocr=self.ocr,
+                    bubbles=strip_bubbles)
+        self._submit_scan(scan)
+        for key, block, edges in recovery:
+            count, _ = self._edge_rechecked.get(key, (0, None))
+            exposure = min(block['y']-vp[0] if edge == 'top'
+                           else vp[1]-(block['y']+block['h']) for edge in edges)
+            self._edge_rechecked[key] = (count+1, exposure)
+
+    def _submit_scan(self, scan):
+        # Reuse the immutable source and initial history across bounded OCR slices.
+        # Live cursor/animation pixels must not restart an unfinished strip.
+        context = scan['context'].fork() if scan['context'] is not None else None
+        crop = scan['crop']
         self._dispatch_started = (self._gen, time.perf_counter())
         self._frame_metrics.counts["ocr_jobs"] += 1
         self._frame_metrics.counts["ocr_pixels"] += int(crop.shape[0] * crop.shape[1])
-        self._job = self._executor.submit(self._ocr_job, crop, a, self._gen, lang,
-                                          self.s.beam_size, context, vp)
+        self._job = self._executor.submit(self._ocr_job, crop, scan['top'], scan['gen'], scan['lang'],
+                                          scan['beam'], context, scan['viewport'], scan)
+        self._job._scan_record = scan
 
     # ------------------ ana döngü ------------------
     @Slot()
@@ -587,7 +761,6 @@ class TranslationWorker(QObject):
 
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ocr")
         capturer = ScreenCapturer()
-        prev_gray = prev_th = None
         last_motion = time.monotonic()
         seen_rver = -1
         was_active = False
@@ -608,7 +781,7 @@ class TranslationWorker(QObject):
                     self._reset_content()
                     self._wait_job()
                     self._clear_translation_context()
-                    prev_gray = None
+                    self._reset_tracker()
                     last_motion = time.monotonic()
                 if (lang != self._loaded_lang or engine != self._loaded_ocr_engine
                         or over != self._loaded_ocr_version):
@@ -617,14 +790,14 @@ class TranslationWorker(QObject):
                     if lang != self._loaded_lang:
                         self._clear_translation_context()
                     self._load_ocr(lang)
-                    prev_gray = None
+                    self._reset_tracker()
                     last_motion = time.monotonic()
 
                 if region is None or (not active and not force):
                     if was_active:
                         self._reset_content()
                         was_active = False
-                    prev_gray = None
+                    self._reset_tracker()
                     self._frame_metrics.previous_frame = None
                     self._poll_policy.reset()
                     time.sleep(0.1)
@@ -636,7 +809,7 @@ class TranslationWorker(QObject):
                     self._reset_content()
                     self._wait_job()
                     self._clear_translation_context()
-                    prev_gray = None
+                    self._reset_tracker()
                     last_motion = time.monotonic()
 
                 loop_start = time.perf_counter()
@@ -659,36 +832,38 @@ class TranslationWorker(QObject):
                 self._sy = img.shape[0] / max(1, region[5])
                 now = time.monotonic()
 
-                if prev_gray is not None:
-                    if prev_gray.shape != gray.shape:
-                        self._reset_content()
-                        last_motion = now
-                    else:
-                        dy = (estimate_vshift(prev_gray, gray, self.s.change_threshold)
-                              if self.s.scroll_tracking else None)
-                        if dy:   # kaydırma -> çevirileri içerikle birlikte kaydır
-                            self._poll_policy.reset()
-                            self._frame_metrics.counts["scroll_frames"] += 1
-                            self.scroll_y += dy
-                            last_motion = now
-                            self._emit_visible()
-                        elif frame_diff(th, prev_th) > self.s.change_threshold:
-                            self._reset_content()      # sayfa değişti
-                            last_motion = now
+                self._tracker.change_threshold = float(self.s.change_threshold)
+                self._tracker.scroll_tracking = bool(self.s.scroll_tracking)
+                event = self._tracker.update(gray, th)
+                if event.reset:
+                    self._reset_content()      # sayfa değişti
+                    self._unhide_for_tracking()
+                    last_motion = now
+                elif event.shift:   # kaydırma -> çevirileri içerikle birlikte kaydır
+                    self._poll_policy.reset()
+                    self._frame_metrics.counts["scroll_frames"] += 1
+                    self.scroll_y += event.shift
+                    last_motion = now
+                    self._emit_visible()
+                    self._unhide_for_tracking()
+                elif event.pending:
+                    self._hide_for_tracking()
+                    last_motion = now
+                else:
+                    self._unhide_for_tracking()
                 self._frame_metrics.add("motion_ms", (time.perf_counter() - motion_start) * 1000)
-                prev_gray, prev_th = gray, th
 
                 self._drain_partials()
                 self._check_job()
 
                 if force:
                     self._poll_policy.reset()
-                    if self._job is None:
+                    if self._job is None and not self._tracking_pending:
                         self._reset_content()
                         self._maybe_submit(img, lang, True)
                         with self._lock:
                             self._force = False
-                elif (now - last_motion) * 1000 >= self.s.settle_ms:
+                elif not self._tracking_pending and (now - last_motion) * 1000 >= self.s.settle_ms:
                     self._maybe_submit(img, lang, False)
 
                 poll = self._poll_interval_ms()
@@ -701,6 +876,7 @@ class TranslationWorker(QObject):
                 self.status.emit(f"Hata: {e}")
                 time.sleep(1.0)
 
+        self._unhide_for_tracking()
         self._frame_metrics.write(PROJECT_ROOT / "logs" / "frame_metrics.json")
         if self._executor is not None:
             self._executor.shutdown(wait=True, cancel_futures=True)

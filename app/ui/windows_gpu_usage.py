@@ -56,7 +56,24 @@ def _method(obj, index, result, *args):
     return C.WINFUNCTYPE(result, C.c_void_p, *args)(table[index])
 
 
-def _adapter():
+def select_adapter(adapters, backend='nvidia', name=None, luid=None):
+    """Require runtime identity or a unique vendor match; DXGI order is not CUDA order."""
+    vendors={'nvidia':0x10de,'amd':0x1002,'intel':0x8086}
+    candidates=[d for d in adapters if d.vendor == vendors.get(backend)]
+    if luid:
+        candidates=[d for d in candidates if adapter_luid(d)==luid.lower()]
+    if name:
+        candidates=[d for d in candidates if d.name.casefold()==name.casefold()]
+    if len(candidates)!=1:
+        raise OSError('runtime gpu adapter is unavailable or ambiguous')
+    return candidates[0]
+
+
+def adapter_luid(desc):
+    return f'luid_0x{desc.luid.high & 0xffffffff:08x}_0x{desc.luid.low:08x}'
+
+
+def _adapter(backend='nvidia', name=None, luid=None):
     factory = C.c_void_p()
     iid = (C.c_ubyte * 16).from_buffer_copy(uuid.UUID('770aae78-f26f-4dba-a829-253c83d1b387').bytes_le)
     create = C.WinDLL('dxgi').CreateDXGIFactory1
@@ -80,18 +97,15 @@ def _adapter():
         _method(factory, 2, W.ULONG)(factory)
     if not adapters:
         raise OSError('No hardware GPU found')
-    # NVIDIA device 0 is the default translation/OCR device. Otherwise use the
-    # first hardware adapter rather than Microsoft's software renderer.
-    desc = next((d for d in adapters if d.vendor == 0x10de), adapters[0])
-    luid = f'luid_0x{desc.luid.high & 0xffffffff:08x}_0x{desc.luid.low:08x}'
-    return desc.name, luid, desc.dedicated
+    desc=select_adapter(adapters,backend,name,luid)
+    return desc.name, adapter_luid(desc), desc.dedicated
 
 
 class WindowsGPUUsage:
-    def __init__(self):
+    def __init__(self, backend='nvidia', name=None, luid=None):
         if sys.platform != 'win32':
             raise OSError('Windows GPU counters require Windows')
-        self.name, self.luid, self.capacity = _adapter()
+        self.name, self.luid, self.capacity = _adapter(backend,name,luid)
         self.pdh = C.WinDLL('pdh')
         self.query = C.c_void_p()
         self.pdh.PdhOpenQueryW.argtypes = [W.LPCWSTR, C.c_size_t, C.POINTER(C.c_void_p)]

@@ -1,4 +1,4 @@
-"""Consent-based dependency manager. Bootstrap runs this outside either venv.
+"""Legacy inventory/removal helpers. Installation uses kurulum.bat and service.py.
 
 No pip, download, settings write or removal happens in --mode scan / --plan.
 Removal accepts catalog keys, never arbitrary paths or package names.
@@ -17,6 +17,9 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from installer.hardware import detect
+
+LEGACY_INSTALL_MESSAGE = ('eski kurulum yolu kaldirildi. kaynak kurulumu icin kurulum.bat '
+                          'dosyasini acin; bilesenleri uygulamanin bagimliliklar ekranindan yonetin.')
 
 COMPONENTS = {
     'core': 'temel uygulama paketleri (zorunlu; cpu torch dahil)',
@@ -165,7 +168,7 @@ class Manager:
         self.run([self.python, '-m', 'pip', *args])
 
     def install_packages(self, *args):
-        self.pip('install', '--constraint', self.root / 'installer' / 'constraints.txt', *args)
+        raise RuntimeError(LEGACY_INSTALL_MESSAGE)
 
     def write_settings(self, **changes):
         path = self.root / 'settings.json'
@@ -179,92 +182,14 @@ class Manager:
         self.state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding='utf-8')
 
     def download(self, component, cpu=False):
-        self.run([self.python, self.root / 'installer' / 'models.py', component, *(['--cpu'] if cpu else [])])
+        raise RuntimeError(LEGACY_INSTALL_MESSAGE)
 
     def install_one(self, key):
-        if key == 'core':
-            if not self.python.exists():
-                owned_path(self.root, '.venv')
-                self.run([sys.executable, '-m', 'venv', self.root / '.venv'])
-                (self.root / '.mergen-managed').write_text('1\n', encoding='ascii')
-                self.local_cache_environment()
-            self.pip('install', '--upgrade', 'pip', 'setuptools', 'wheel')
-            self.install_packages('torch==2.11.0', 'torchvision==0.26.0', '--index-url', 'https://download.pytorch.org/whl/cpu')
-            self.install_packages('-r', self.root / 'installer' / 'requirements-base.txt')
-            self.pip('check')
-            self.run([self.python, '-c', "import torch,cv2,ctranslate2,PySide6; assert torch.version.cuda is None; print((torch.ones(2,2)@torch.ones(2,2)).sum().item())"])
-        elif key in ('paddle-cpu', 'paddle-gpu'):
-            # They share the 'paddle' import directory: uninstall BOTH before
-            # reinstalling the selected implementation, never leave a collision.
-            self.pip('uninstall', '-y', 'paddlepaddle', 'paddlepaddle-gpu')
-            gpu = key == 'paddle-gpu'
-            if gpu:
-                self.install_packages('paddlepaddle-gpu==3.2.2', '--index-url', 'https://www.paddlepaddle.org.cn/packages/stable/cu129/')
-                self.install_packages('nvidia-nvjitlink-cu12==12.9.86')
-            else:
-                self.install_packages('paddlepaddle==3.3.1')
-            self.run([self.python, '-c',
-                "from app.gpu_env import setup_cuda_dll_paths; setup_cuda_dll_paths(); import paddle; "
-                + ("assert paddle.is_compiled_with_cuda(); paddle.set_device('gpu:0'); " if gpu else "paddle.set_device('cpu'); ")
-                + "print(paddle.matmul(paddle.ones([4,4]),paddle.ones([4,4])).numpy())"])
-            self.download('paddle', cpu=not gpu)
-            self.write_settings(use_gpu='auto' if gpu else 'no')
-        elif key in ('korean', 'server'):
-            self.download(key, cpu='paddlepaddle-gpu' not in package_versions(self.python))
-        elif key == 'manga-cpu':
-            self.install_packages('manga-ocr==0.1.16')
-            self.download('manga')
-            self.run([self.python, '-c', "from app.core.manga_client import MangaClient; m=MangaClient('cpu'); assert m.device=='cpu'; m.close()"])
-            self.write_settings(use_manga_ocr=True, manga_device='cpu')
-        elif key == 'manga-gpu':
-            owned_path(self.root, '.manga-venv')
-            self.run([sys.executable, self.root / 'scripts' / 'setup_manga_gpu.py'])
-            self.run([self.python, '-c', "from app.core.manga_client import MangaClient; m=MangaClient('cuda'); assert m.device=='cuda'; m.close()"])
-            self.write_settings(use_manga_ocr=True, manga_device='auto', use_gpu='auto')
-        elif key in MODEL_DIRS:
-            self.download(key)
-        else:
-            raise ValueError(key)
+        """Do not mutate environments through the retired package catalog."""
+        raise RuntimeError(LEGACY_INSTALL_MESSAGE)
 
     def install(self, requested):
-        if not self.hardware['supported_os'] or not self.hardware['supported_python'] or not self.hardware['avx']:
-            raise RuntimeError('bu kurulum windows 10 2004+/11 x64, python 3.11 x64 ve avx destekli işlemci ister')
-        plan = self.plan(requested)
-        if not plan:
-            return
-        print('\nkurulum planı (bağımlı bileşenler dahil):')
-        for key in plan:
-            print(' · ' + COMPONENTS[key])
-        if {'paddle-cpu', 'paddle-gpu'} & set(plan):
-            print('paddle cpu/gpu seçimi mevcut paddle altyapısının yerini alır.')
-        if set(MODEL_DIRS) & set(plan):
-            print('nllb: meta / cc-by-nc-4.0; modeller ticari olmayan kullanım içindir. ayrıntı: THIRD_PARTY_NOTICES.md')
-        required = 5 + (8 if 'paddle-gpu' in plan else 0) + (8 if 'manga-gpu' in plan else 0) + (6 if '1300m' in plan else 3 if '600m' in plan else 0)
-        print(f'tahmini geçici boş alan bütçesi: {required} gib; internetten büyük indirmeler yapılacak.')
-        if self.hardware['free_gib'] < required:
-            raise RuntimeError('yeterli boş alan yok; kurulum başlamadı')
-        if not confirm('bu planı ve gerekli alt bağımlılıkları kurmayı onaylıyor musunuz?'):
-            print('kurulum iptal edildi; paket kurulmadı.')
-            return
-        if not self.hardware['vc_runtime']:
-            if not confirm('microsoft vc++ x64 çalışma zamanı eksik. resmi microsoft paketini sisteminize kurmaya izin veriyor musunuz?'):
-                print('gerekli çalışma zamanı kurulmadığı için kurulum durdu.')
-                return
-            self.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', self.root / 'installer' / 'install_runtime.ps1'])
-        if not confirm('mergen penceresini kapattınız mı?'):
-            print('uygulamayı kapatıp yeniden deneyin.')
-            return
-        for key in plan:
-            self.record(key, 'installing')
-            try:
-                self.install_one(key)
-            except Exception:
-                self.record(key, 'failed')
-                print(f'{key} tamamlanamadı. önceki başarılı bileşenler korundu; menüden yeniden deneyebilirsiniz.')
-                raise
-            self.record(key, 'installed')
-        print('\nseçilen işlemler tamamlandı. sağlık kontrolü yapılıyor...')
-        self.health()
+        raise RuntimeError(LEGACY_INSTALL_MESSAGE)
 
     def remove_paths(self, relatives):
         # Resolve every target before removing any. Nothing outside this copy,
@@ -404,28 +329,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['install', 'menu', 'scan'], default='menu')
     parser.add_argument('--plan', nargs='+', choices=list(COMPONENTS), help='yalnız planı yazdır; kurulum yapma')
-    parser.add_argument('--install', nargs='+', choices=list(COMPONENTS), help='açık bileşen listesiyle kurulum')
+    parser.add_argument('--install', nargs='+', choices=list(COMPONENTS), help='kaldirilan kurulum yolu; kurulum.bat kullanin')
     parser.add_argument('--yes', action='store_true', help='yalnız --install ile: listelenen plan ve sistem önkoşullarını açıkça onayla')
     args = parser.parse_args()
     if args.yes and not args.install:
         parser.error('--yes yalnız --install ile kullanılabilir')
+    if args.install or args.mode == 'install':
+        parser.error(LEGACY_INSTALL_MESSAGE)
     manager = Manager()
     if args.plan:
         print(json.dumps(manager.plan(args.plan), ensure_ascii=False))
         return
     manager.show()
-    if args.install:
-        if args.yes:
-            global confirm
-            def confirm(message):
-                print(message + ' [komut satırında açık onay verildi]')
-                return True
-        manager.install(args.install)
-        return
     if args.mode == 'scan':
-        return
-    if args.mode == 'install':
-        wizard(manager)
         return
     while True:
         choice = input('\n1 tara / 2 kur veya onar / 3 kaldır / 4 sağlık kontrolü / 0 çıkış: ').strip()

@@ -20,6 +20,14 @@ SECRET = re.compile(rb'-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|github_pat_[A-Za-
 PERSONAL = re.compile(rb'[A-Za-z]:[\\/]Users[\\/][^\\/\r\n]+', re.I)
 
 
+PRIVATE_DIRECTORIES = {'.imza', 'private', 'private_keys', 'private-keys', 'secrets',
+                       'credentials', '.credentials', 'signing', 'profiles',
+                       'user_profiles', 'user-profiles', 'userdata', 'user-data'}
+SIGNING_TOOL_NAME = re.compile(r'^(?:sign(?:ing)?[_-](?:release|manifest|update)|'
+                               r'(?:create|generate|keygen)[_-](?:release[_-])?(?:private[_-])?key)', re.I)
+PRIVATE_KEY_LOADER = re.compile(rb'\bload_(?:pem|der|ssh)_private_key\s*\(')
+
+
 def source_files(source=ROOT, include_tests=True):
     source = Path(source).resolve()
     paths = [source / name for name in FILES]
@@ -39,11 +47,17 @@ def source_files(source=ROOT, include_tests=True):
                 raise ValueError('source contains a filesystem link')
             cursor = cursor.parent
         relative = path.relative_to(source).as_posix()
+        if any(part.lower() in PRIVATE_DIRECTORIES for part in path.relative_to(source).parts[:-1]):
+            raise ValueError('private runtime directory is not publishable: ' + relative)
+        if path.suffix in {'.py', '.ps1'} and SIGNING_TOOL_NAME.match(path.stem):
+            raise ValueError('signing tool is not publishable: ' + relative)
         if 'private' in path.name.lower() or path.name in {'settings.json', '.env'}:
             raise ValueError('private data is not publishable: ' + relative)
         if path.suffix == '.pem' and relative != 'assets/update-public-key.pem':
             raise ValueError('only the pinned public key may be exported')
         data = path.read_bytes()
+        if path.suffix in {'.py', '.ps1'} and path.relative_to(source).parts[0] == 'scripts' and PRIVATE_KEY_LOADER.search(data):
+            raise ValueError('private-key signing tool is not publishable: ' + relative)
         if SECRET.search(data) or PERSONAL.search(data):
             raise ValueError('potential secret or personal path: ' + relative)
     return sorted(set(paths))

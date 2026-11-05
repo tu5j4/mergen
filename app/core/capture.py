@@ -37,6 +37,10 @@ class ScreenCapturer:
         bgra = np.frombuffer(shot.bgra, dtype=np.uint8).reshape(shot.height, shot.width, 4)
         return cv2.cvtColor(bgra, cv2.COLOR_BGRA2RGB)
 
+    def grab_plan(self, plan):
+        from .capture_geometry import capture_canvas
+        return capture_canvas(plan, self.grab)
+
     def close(self) -> None:
         if self._sct is not None:
             try:
@@ -58,6 +62,19 @@ def frame_diff(a: np.ndarray | None, b: np.ndarray | None) -> float:
     if a is None or b is None or a.shape != b.shape:
         return 255.0
     return float(np.mean(np.abs(a - b)))
+
+
+def _rows_agree(a: np.ndarray, b: np.ndarray, limit: float,
+                frac: float = 0.35, minimum: int = 8) -> bool:
+    """Most rows must match; a fixed site header/footer may not.
+
+    Random unrelated pages match almost no row, while a real scroll keeps every
+    body row identical even when fixed chrome occupies part of the viewport.
+    """
+    if a.ndim != 2 or b.ndim != 2 or a.shape != b.shape or not a.size:
+        return False
+    rows = np.abs(a - b).mean(axis=1)
+    return int((rows <= limit).sum()) >= max(minimum, int(round(a.shape[0] * frac)))
 
 
 def estimate_vshift(prev_gray: np.ndarray, cur_gray: np.ndarray,
@@ -86,6 +103,26 @@ def estimate_vshift(prev_gray: np.ndarray, cur_gray: np.ndarray,
     if sh - band_h < 4:
         return None
 
+    # Allow a small horizontal jitter (font/scrollbar/rendering shifts) while
+    # still reporting the vertical displacement only.
+    margin = max(2, min(12, int(round(sw * 0.05))))
+    if sw - 2 * margin < 16:
+        margin = 0
+    tw = sw - 2 * margin
+
+    def _valid(dy, dx):
+        if dy == 0:
+            # A fixed header alone must not hide body scrolling: with a real
+            # vertical move the whole-frame difference stays large.
+            return float(np.mean(np.abs(psf - csf))) <= diff_threshold * 4
+        if dy > 0:
+            a, b = psf[dy:], csf[:sh - dy]
+        else:
+            a, b = psf[:sh + dy], csf[-dy:]
+        a = a[:, margin:margin + tw]
+        b = b[:, margin + dx:margin + dx + tw]
+        return _rows_agree(a, b, diff_threshold * 4)
+
     # Önceki karede en çok doku içeren yatay şeridi şablon olarak seç
     row_tex = np.abs(np.diff(psf, axis=1)).mean(axis=1)
     csum = np.concatenate([[0.0], np.cumsum(row_tex)])
@@ -94,23 +131,29 @@ def estimate_vshift(prev_gray: np.ndarray, cur_gray: np.ndarray,
         if win[y0] / band_h < 1.5:      # bembeyaz/düz alan -> güvenilmez
             return None
 
-        tmpl = ps[y0:y0 + band_h]
+        tmpl = ps[y0:y0 + band_h, margin:margin + tw]
         res = cv2.matchTemplate(cs, tmpl, cv2.TM_CCOEFF_NORMED)
         _, score, _, loc = cv2.minMaxLoc(res)
         if not np.isfinite(score) or score < min_score:
             return None
-        y1 = int(loc[1])
+        y1, x1 = int(loc[1]), int(loc[0])
         dys = y0 - y1
+        dx = x1 - margin
 
         # Doğrulama: örtüşen alan gerçekten aynı mı?
-        if dys > 0:
-            a, b = psf[dys:], csf[:sh - dys]
-        elif dys < 0:
-            a, b = psf[:sh + dys], csf[-dys:]
-        else:
-            a, b = psf, csf
-        if a.shape[0] < sh * 0.2 or float(np.mean(np.abs(a - b))) > diff_threshold * 4:
+        if not _valid(dys, dx):
             return None
+        # Repeating bands can provide multiple equally plausible shifts.
+        # Reject a distant competing peak only when the full overlap also
+        # matches; template repetition alone must not reject unique context.
+        response = res.max(axis=1).copy()
+        radius = max(2, band_h // 4)
+        response[max(0, y1 - radius):min(len(response), y1 + radius + 1)] = -1
+        alternate = int(np.argmax(response))
+        if np.isfinite(response[alternate]) and response[alternate] >= score - .01:
+            alt_dx = int(np.argmax(res[alternate])) - margin
+            if _valid(y0 - alternate, alt_dx):
+                return None
         if dys == 0:
             return 0
 
@@ -121,8 +164,14 @@ def estimate_vshift(prev_gray: np.ndarray, cur_gray: np.ndarray,
         r = int(np.ceil(1 / s)) + 2
         lo, hi = max(0, guess - r), min(H - fbh, guess + r)
         if hi >= lo:
-            region = cur_gray[lo:hi + fbh]
-            tmpl_f = prev_gray[fy0:fy0 + fbh]
+            # Preserve the horizontal search at native resolution as well.
+            # A full-width template cannot refine a horizontally jittered frame.
+            fm = int(round(margin / s))
+            fw = W - 2 * fm
+            gx = fm + int(round(dx / s))
+            xl, xh = max(0, gx - r), min(W - fw, gx + r)
+            region = cur_gray[lo:hi + fbh, xl:xh + fw]
+            tmpl_f = prev_gray[fy0:fy0 + fbh, fm:fm + fw]
             res_f = cv2.matchTemplate(region, tmpl_f, cv2.TM_CCOEFF_NORMED)
             _, sf, _, loc_f = cv2.minMaxLoc(res_f)
             if np.isfinite(sf) and sf >= min_score:

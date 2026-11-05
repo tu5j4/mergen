@@ -143,7 +143,8 @@ def install(key, emit=print):
     state=inventory()
     runtime='cpu'
     if not state[runtime]['ready']:
-        runtime=next((k for k in ('nvidia','amd','intel') if state[k]['ready']),None)
+        candidates=(('nvidia-paddle',) if item['kind']=='ocr' and item.get('family')=='paddle' else ())+('nvidia','amd','intel')
+        runtime=next((k for k in candidates if state[k]['ready']),None)
     if runtime is None: raise RuntimeError('Önce bir çalışma ortamı kurun.')
     run([DATA_ROOT/'envs'/runtime/'Scripts/python.exe', WORKER_ROOT/'scripts/component_models.py',key],emit)
 
@@ -173,6 +174,7 @@ def task_components(settings,task):
     family='torch' if settings.ocr_backend in ('amd','intel') else 'paddle'
     keys=[environment_key(settings.ocr_backend,'ocr'),'ocr-'+family]
     if settings.source_lang=='ko':keys.append('korean-'+family)
+    if not settings.paddle_mobile and family=='paddle':keys.append('ocr-paddle-server')
     return keys
 
 def component_ready(settings,task,key,state):
@@ -207,6 +209,7 @@ def validate(settings, emit=print):
                 # Korean must exercise its own recognizer rather than switching to English.
                 language=settings.source_lang if task!='ocr' or settings.source_lang=='ko' else 'en'
                 client=RuntimeClient(task,backend,language=language,model=str(settings.model_path),
+                    canvas=settings.ocr_canvas_size,paddle_mobile=settings.paddle_mobile,
                     progress=lambda phase:event(emit,phase=title+' · '+phase,progress=-1))
                 if task=='translate':
                     samples={'en':'Hello, how are you?','ja':'こんにちは。元気ですか？','ko':'안녕하세요. 잘 지내세요?',

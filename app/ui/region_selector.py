@@ -31,6 +31,7 @@ class RegionSelector(QWidget):
 
         self._origin: QPoint | None = None
         self._current: QPoint | None = None
+        self._global_origin: QPoint | None = None
         self._done = False
 
     def start(self) -> None:
@@ -70,6 +71,7 @@ class RegionSelector(QWidget):
     def mousePressEvent(self, e) -> None:
         if e.button() == Qt.MouseButton.LeftButton:
             self._origin = e.position().toPoint()
+            self._global_origin = e.globalPosition().toPoint()
             self._current = self._origin
             self.update()
         elif e.button() == Qt.MouseButton.RightButton:
@@ -84,10 +86,10 @@ class RegionSelector(QWidget):
         if e.button() != Qt.MouseButton.LeftButton or self._origin is None:
             return
         self._current = e.position().toPoint()
-        sel = self._selection()
-        if sel is not None and sel.width() > 30 and sel.height() > 30:
+        sel = QRect(self._global_origin, e.globalPosition().toPoint()).normalized()
+        if sel.width() > 30 and sel.height() > 30:
             self._done = True
-            global_rect = sel.translated(self.geometry().topLeft())
+            global_rect = sel
             self.close()
             self.region_selected.emit(global_rect)
         else:

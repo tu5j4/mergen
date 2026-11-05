@@ -57,8 +57,28 @@ def detect_bubbles(rgb: np.ndarray, min_area: int = 900) -> list[Bubble]:
     return result
 
 
-def bubble_id(box, bubbles: list[Bubble], min_coverage: float = 0.0) -> int | None:
+def shift_bubbles(bubbles: list[Bubble], dy: int, height: int) -> list[Bubble]:
+    """Move full-viewport balloons into a horizontal strip's coordinates.
+
+    Balloons are detected once on the whole visible frame. A scroll strip is
+    only a slice of it, where a large balloon can look like plain background
+    and its true viewport edge contact is invisible. Coordinates may extend
+    beyond the strip; edge tests treat that as a clipped balloon.
+    """
+    out = []
+    for b in bubbles:
+        y1, y2 = b.y1 + dy, b.y2 + dy
+        if y2 <= 0 or y1 >= height:
+            continue
+        contour = None if b.contour is None else b.contour + np.array([[[0, dy]]], dtype=b.contour.dtype)
+        out.append(Bubble(b.x1, y1, b.x2, y2, contour))
+    return out
+
+
+def bubble_id(box, bubbles: list[Bubble], min_coverage: float = 0.0,
+              interior_coverage: float | None = None) -> int | None:
     """Kutunun merkezini içeren en küçük balonu döndürür."""
+    interior = min_coverage if interior_coverage is None else interior_coverage
     def covers(b):
         if not b.contains(box.cx, box.cy):
             return False
@@ -72,7 +92,7 @@ def bubble_id(box, bubbles: list[Bubble], min_coverage: float = 0.0) -> int | No
         # contours. Sample the interior, allowing a little OCR padding.
         return sum(b.contains(box.x1 + (box.x2-box.x1)*x,
                               box.y1 + (box.y2-box.y1)*y)
-                   for x in (.2, .5, .8) for y in (.1, .3, .5, .7, .9)) / 15 >= min_coverage
+                   for x in (.2, .5, .8) for y in (.1, .3, .5, .7, .9)) / 15 >= interior
 
     candidates = [(i, (b.x2 - b.x1) * (b.y2 - b.y1))
                   for i, b in enumerate(bubbles) if covers(b)]

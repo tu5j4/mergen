@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("mergen kurulumu")]
 [assembly: AssemblyProduct("mergen")]
 [assembly: AssemblyCompany("mergen contributors")]
-[assembly: AssemblyVersion("0.5.1.0")]
-[assembly: AssemblyFileVersion("0.5.1.0")]
+[assembly: AssemblyVersion("0.5.2.0")]
+[assembly: AssemblyFileVersion("0.5.2.0")]
 
 [DataContract] public class PackagePart {
     [DataMember] public string name;
@@ -72,10 +72,12 @@ public class InstallerWindow : Form {
     HttpWebRequest request;
     Package package;
     string installerArguments;
+    readonly bool silent;
     public bool InstallSucceeded { get; private set; }
-    public InstallerWindow(Package value, string arguments) {
+    public InstallerWindow(Package value, string arguments, bool silentMode) {
         package = value;
         installerArguments = arguments;
+        silent = silentMode;
         Text = "mergen · kurulum " + package.version;
         ClientSize = new Size(480, 148);
         FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -91,6 +93,7 @@ public class InstallerWindow : Form {
         Shown += delegate { var thread = new Thread(Work); thread.IsBackground = true; thread.Start(); };
     }
     void Check() { if (cancelled) throw new OperationCanceledException(); }
+    public void RunSilent() { Work(); }
     void UpdateStatus(string text, int percent) {
         if (IsDisposed || !IsHandleCreated) return;
         try { BeginInvoke((Action)delegate { status.Text = text; progress.Value = Math.Max(0, Math.Min(100, percent)); }); }
@@ -147,11 +150,15 @@ public class InstallerWindow : Form {
                 using (var process = Process.Start(start)) { process.WaitForExit(); if (process.ExitCode != 0) throw new IOException("kurulum tamamlanmadı; başlatıcıyı yeniden çalıştırabilirsin"); }
                 InstallSucceeded = true;
                 finished = true;
-                BeginInvoke((Action)delegate { Close(); });
+                if (!silent) BeginInvoke((Action)delegate { Close(); });
             }
         } catch (Exception error) {
             if (cancelled) return;
             finished = true;
+            if (silent) {
+                Console.Error.WriteLine("kurulum tamamlanamadı: " + error.Message);
+                return;
+            }
             try { BeginInvoke((Action)delegate { status.Text = "kurulum tamamlanamadı: " + error.Message.ToLowerInvariant(); cancel.Text = "kapat"; }); }
             catch (InvalidOperationException) { }
         }
@@ -161,8 +168,10 @@ public static class Program {
     [STAThread] public static int Main(string[] args) {
         Application.EnableVisualStyles(); Application.SetCompatibleTextRenderingDefault(false);
         var forwarded = new List<string>();
+        bool silent = false;
         foreach (string arg in args) {
             string upper = arg.ToUpperInvariant();
+            if (upper == "/VERYSILENT" || upper == "/SILENT") silent = true;
             if (upper == "/VERYSILENT" || upper == "/SILENT" || upper == "/SUPPRESSMSGBOXES" || upper == "/NORESTART" ||
                 upper == "/CLOSEAPPLICATIONS" || upper == "/RESTARTAPPLICATIONS" || upper == "/SP-" ||
                 upper.StartsWith("/LOG=") || upper.StartsWith("/DIR="))
@@ -170,8 +179,9 @@ public static class Program {
         }
         using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("mergen.payload")) {
             var package = (Package)new DataContractJsonSerializer(typeof(Package)).ReadObject(stream);
-            using (var window = new InstallerWindow(package, String.Join(" ", forwarded.ToArray()))) {
-                Application.Run(window);
+            using (var window = new InstallerWindow(package, String.Join(" ", forwarded.ToArray()), silent)) {
+                if (silent) window.RunSilent();
+                else Application.Run(window);
                 return window.InstallSucceeded ? 0 : 1;
             }
         }

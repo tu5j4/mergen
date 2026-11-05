@@ -25,6 +25,7 @@ class Translator:
             from .runtime_client import RuntimeClient
             self._runtime = RuntimeClient('translate', backend, model=str(model_dir))
             self.device = self._runtime.device
+            self.adapter = self._runtime.adapter
             self.compute_type = 'float32' if backend in ('amd','intel') else 'auto'
             if self.context_model:self.compute_type='auto' if backend=='nvidia' else 'float32'
             self.beam_size, self.cache_size = beam_size, cache_size
@@ -79,6 +80,9 @@ class Translator:
                 str(model_dir), device="cpu", compute_type="int8",
                 inter_threads=1, intra_threads=threads,
             )
+        # Local CTranslate2 exposes no physical GPU identity; the device string
+        # remains the source of truth (CPU fallback stays CPU).
+        self.adapter = {}
         self.beam_size = beam_size
         self.cache_size = cache_size
         self._cache: OrderedDict[tuple, str] = OrderedDict()

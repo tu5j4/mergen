@@ -8,16 +8,16 @@ mergen; **manga, manhwa, manhua, webtoon ve çizgi romanları türkçe okumayı 
 
 okuduğun siteyi veya görüntüleyiciyi değiştirmeden, sayfaları tek tek dışa aktarmadan okumaya devam edebilirsin. çeviri katmanı tıklamalarını engellemez; sayfayı kaydırırken çeviri alanı takip edilir. kurulum paketi ve çalışma kütüphaneleri hazırlandıktan sonra metin tanıma ve çeviri bilgisayarında çalışır.
 
-## v0.5.1
+## v0.5.2
 
-adaptif ekran kontrolü ve rust kutu hesapları ana sürümdedir. kaydırma takibi, bağlamlı çeviride tamamlanma kontrolü ve kaynak kurulumunda sabit modellerin hazırlanması düzeltildi.
+balonları bütün çevirme, kaydırmada yarım metni tamamlama ve çoklu ekran takibi iyileştirildi. ayarlar tek arayüzde toplandı; windows açılışı ve kurulum güncellendi.
 
 ## neler sunar?
 
 - japonca manga, korece manhwa ve webtoon, çince manhua ve ingilizce çizgi romanlar için türkçe çeviri.
 - seçili bölge veya tüm ekran üzerinden okuma; konuşma balonlarını ve metin gruplarını dikkate alan işleme.
 - japonca dikey metinler için okuma düzeni ve manga-ocr desteği.
-- çeviri katmanının yazı tipi, boyutu, teması ve saydamlığını ayarlama; ekran paylaşımında görünürlüğünü seçme.
+- çeviri katmanının yazı tipi, boyutu ve saydamlığını ayarlama; ekran paylaşımında görünürlüğünü seçme.
 - cihazına göre cpu veya desteklenen ekran kartı ortamını seçme; çalışma kütüphanelerini uygulama içinden kurma ve modelleri yönetme.
 
 ## kullandığımız modeller
@@ -37,7 +37,7 @@ mergen iki aşamada çalışır: **önce görseldeki yazıyı okur, ardından ok
 ## kurulum ve kullanım
 
 1. [güncel kurulum paketini releases bölümünden indir](https://github.com/tu5j4/mergen/releases/latest) ve uygulamayı kur.
-2. `mergen-setup-0.5.1.exe` dosyasını çalıştır. başlatıcı yaklaşık 4,16 gb kurulum verisini indirip dosya özetlerini doğrular ve kurulumu açar. standart 600m, bağlamlı 1.3b, mobil paddleocr, korece ocr ve japonca manga-ocr bu sabit paketten kurulur. kurulum sonrası donanım taranır; uygun çalışma kütüphaneleri uygulama içinden kurulur. gpu kurulumu veya gerçek model testi geçmezse cpu ile devam edilir. aynı işlem **modeller** sayfasındaki **donanımı tara ve uygun kütüphaneleri kur** düğmesinden başlatılabilir.
+2. `mergen-setup-0.5.2.exe` dosyasını çalıştır. başlatıcı yaklaşık 4,16 gb kurulum verisini indirip dosya özetlerini doğrular ve kurulumu açar. standart 600m, bağlamlı 1.3b, mobil paddleocr, korece ocr ve japonca manga-ocr bu sabit paketten kurulur. kurulum sonrası donanım taranır; uygun çalışma kütüphaneleri uygulama içinden kurulur. gpu kurulumu veya gerçek model testi geçmezse cpu ile devam edilir. aynı işlem **modeller** sayfasındaki **donanımı tara ve uygun kütüphaneleri kur** düğmesinden başlatılabilir.
 3. kaynak dili seç; **bölge seç** ile okuma alanını işaretle veya **tüm ekran** seçeneğini kullan.
 4. **çeviriyi başlat** düğmesine bas ve okumaya devam et. gerekirse **şimdi çevir** ile yeniden dene.
 

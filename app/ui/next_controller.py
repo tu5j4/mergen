@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from PySide6.QtCore import QObject, Property, Signal, Slot, QThread, QTimer, QRect
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QFontDatabase
 from PySide6.QtCore import QUrl
 from dataclasses import replace
 from app.config import Settings, LANGS
@@ -41,18 +41,22 @@ class Controller(QObject):
         super().__init__()
         prepare_data()
         self.settings=Settings.load()
+        self._installed_font_families=list(dict.fromkeys(QFontDatabase.families()))
         self._automatic_start_requested='--configure-hardware' in sys.argv
         for name in ('translation_backend','ocr_backend','manga_backend'):
             if getattr(self.settings,name)=='local': setattr(self.settings,name,'cpu')
         self.settings.save()
         self.backend=None;self.job=None;self._job_read_only=False;self._pending=None;self._stopping=False
         self._exit_action=None
+        self._server_ocr_ready=False
+        self._ocr_ready={'manga_ocr':False,'paddleocr':False}
         self._state={'version':VERSION,'status':'Okumaya hazır.','running':False,'busy':False,'log':'',
                      'components':[],'hardware':'Donanım bilgileri alınıyor…','updates':'Henüz kontrol edilmedi.',
                      'validation':[],'validationSummary':'model testi henüz çalıştırılmadı.','operationTitle':'bileşen durumu','phase':'indirme ve kurulum ayrıntıları burada görünür.','activeComponent':'','progress':-1,
-                     'updateAvailable':False,'recommendation':'Donanım kontrol ediliyor…','dataPath':str(DATA_ROOT),'usage':{'gpu':'—','vram':'—','cpu':'—'}}
+                     'updateAvailable':False,'recommendation':'Donanım kontrol ediliyor…','dataPath':str(DATA_ROOT),'usage':{'gpu':'—','vram':'—','cpu':'—'},'usageScope':'gpu aygıtı henüz belirlenmedi','devices':''}
         from app.ui.usage_monitor import UsageMonitor
         self.monitor=UsageMonitor(self);self.monitor.readings.connect(self.usage)
+        self.monitor.set_runtime_adapter('cpu')
         enabled=any((self.settings.show_gpu_usage,self.settings.show_vram_usage,self.settings.show_cpu_usage))
         self.monitor.set_enabled(enabled and self.settings.show_gpu_usage,enabled and self.settings.show_vram_usage,enabled and self.settings.show_cpu_usage)
         from app.ui.control_panel import HotkeyBridge, start_global_hotkeys
@@ -70,6 +74,12 @@ class Controller(QObject):
         if self.hotkeys:
             self.hotkeys.stop()
 
+    def _font_choices(self):
+        families=list(self._installed_font_families)
+        if self.settings.font_family not in families:
+            families.append(self.settings.font_family)
+        return families
+
     @Property('QVariantMap',notify=changed)
     def state(self):
         return dict(self._state,cancelling=bool(self.job and self.job.cancel_requested.is_set()),
@@ -80,17 +90,60 @@ class Controller(QObject):
             translationBackend=self.settings.translation_backend,ocrBackend=self.settings.ocr_backend,
             mangaBackend=self.settings.manga_backend,model='1300m' if self.settings.translation_model=='nllb-1.3b-baglam-v3' or '1.3B' in self.settings.translation_model else '600m',
             opacity=self.settings.overlay_opacity,mangaEnabled=self.settings.use_manga_ocr,
-            overlayTheme=self.settings.theme,fontFamily=self.settings.font_family,maxFont=self.settings.max_font_px,
+            fontFamilies=self._font_choices(),fontFamily=self.settings.font_family,maxFont=self.settings.max_font_px,
+            minFont=self.settings.min_font_px,boxPadding=self.settings.box_padding,
             bold=self.settings.font_bold,preset=self.settings.speed_preset,scrollTracking=self.settings.scroll_tracking,
+            pollMs=self.settings.poll_ms,settleMs=self.settings.settle_ms,
+            ocrEngine=self.settings.ocr_engine,paddleMobile=self.settings.paddle_mobile,
+            paddleServerAvailable=self._paddle_server_available(),paddleModeNote=self._paddle_mode_note(),
+            bubbleDetection=self.settings.bubble_detection,
+            mangaDevice=self.settings.manga_device,mangaDeviceEnabled=self._manga_device_enabled(),
+            mangaDeviceNote=self._manga_device_note(),ocrEngineNote=self._ocr_engine_note(),
+            overlayVisible=self.settings.overlay_visible,devices=self._state.get('devices',''),
             contextEnabled=self.settings.session_context,chinesePivot=self.settings.chinese_translation_via_english,
             shareTranslations=self.settings.share_translations,
             checkUpdates=self.settings.check_updates,showGpu=self.settings.show_gpu_usage,
             showVram=self.settings.show_vram_usage,showCpu=self.settings.show_cpu_usage,
             showUsage=any((self.settings.show_gpu_usage,self.settings.show_vram_usage,self.settings.show_cpu_usage)))
 
+    def _paddle_server_available(self):
+        return bool(self._server_ocr_ready) and self.settings.ocr_backend in ('cpu','nvidia')
+
+    def _paddle_mode_note(self):
+        if self.settings.paddle_mobile:return ''
+        if self._paddle_server_available():return 'sunucu modelleri kullanılacak · daha yavaş'
+        return 'sunucu modelleri eksik · modeller ekranından indir'
+
+    def _manga_device_enabled(self):
+        return (self.settings.manga_backend=='local' and self.settings.source_lang=='ja'
+                and self.settings.use_manga_ocr and self.settings.ocr_engine in ('auto','manga_ocr'))
+
+    def _manga_device_note(self):
+        if self.settings.manga_backend!='local':
+            return 'manga-ocr cihazını seçtiğin çalışma ortamı belirler'
+        if not self._manga_device_enabled():
+            return 'yalnızca yerel japonca manga-ocr için geçerlidir'
+        return ''
+
+    def _ocr_engine_note(self):
+        engine=self.settings.ocr_engine
+        if engine=='manga_ocr':
+            if self.settings.source_lang!='ja':return 'manga-ocr yalnızca japonca için kullanılır'
+            if not self._ocr_ready['manga_ocr']:return 'manga-ocr modeli veya çalışma ortamı eksik'
+        if engine=='paddleocr' and not self._ocr_ready['paddleocr']:
+            return 'paddleocr modeli veya çalışma ortamı eksik'
+        return ''
+
     def status(self,text): self._state['status']=str(text).replace('İ','i').lower();self.changed.emit()
     def usage(self,values):
         self._state['usage'].update({k:(str(v)+'%' if v is not None else '—') for k,v in values.items()});self.changed.emit()
+    def runtime_usage(self,selection):
+        self.monitor.set_runtime_adapter(**selection)
+        backend=selection.get('backend')
+        self._state['usageScope']=('işlemci kullanılıyor' if backend=='cpu' else
+            f"gpu: {backend} · tüm uygulamalar" if backend in ('nvidia','amd','intel') else
+            'gpu aygıtı kesin olarak belirlenemedi')
+        self.changed.emit()
     def append(self,line):
         if line.startswith('@mergen:'):
             data=json.loads(line[8:])
@@ -106,7 +159,11 @@ class Controller(QObject):
         self._state['log']=(self._state['log']+'\n'+line)[-24000:];self.changed.emit()
 
     def scan_components(self):
-        self._state['components']=[dict(v,key=k) for k,v in service.inventory().items()]
+        inventory=service.inventory()
+        self._state['components']=[dict(v,key=k) for k,v in inventory.items()]
+        self._server_ocr_ready=bool(inventory.get('ocr-paddle-server',{}).get('ready'))
+        self._ocr_ready={'manga_ocr':bool(inventory.get('manga',{}).get('ready')),
+                         'paddleocr':bool(inventory.get('ocr-paddle',{}).get('ready'))}
 
     def job_error(self,message):
         if self.job and self.job.cancel_requested.is_set():
@@ -212,37 +269,69 @@ class Controller(QObject):
 
     def ensure_backend(self):
         if self.backend is not None:return self.backend
+        if self._stopping:return None
         from app.ui.control_panel import ControlPanel
-        owner=self
-        class Backend(ControlPanel):
-            def _set_status(self,text):
-                super()._set_status(text);owner._state['running']=self.running;owner.status(text)
-            def _on_worker_error(self,msg):
-                owner.status('Hata: '+msg);owner.release_backend()
-            def _show_settings(self): owner.navigate.emit(1)
-        self.settings.save();self.backend=Backend(enable_hotkeys=False)
-        self.backend.usage_monitor.close()
-        self.backend.bridge.toggle_run.connect(lambda:self._state.update(running=self.backend.running))
-        self.backend.settings_dialog.hide()
-        return self.backend
+        self.backend=ControlPanel(self.settings,self)
+        backend=self.backend
+        backend.runtime_adapter.connect(self.runtime_usage)
+        backend.status_changed.connect(self.status)
+        backend.running_changed.connect(self._backend_running)
+        backend.devices_changed.connect(self._backend_devices)
+        backend.region_changed.connect(self._backend_region)
+        backend.settings_changed.connect(self._persist_settings)
+        backend.error.connect(self._backend_error)
+        backend.closed.connect(self._backend_closed)
+        return backend
+
+    def _backend_running(self,running):
+        self._state['running']=bool(running);self.changed.emit()
+
+    def _backend_devices(self,text):
+        self._state['devices']=str(text);self.changed.emit()
+
+    def _backend_region(self,rect):
+        self.settings.last_region=[rect.x(),rect.y(),rect.width(),rect.height()]
+        self.settings.save()
+        self.status('okuma alanı güncellendi · '+str(rect.width())+'×'+str(rect.height()))
+        self.changed.emit()
+
+    def _persist_settings(self):
+        self.settings.save();self.changed.emit()
+
+    def _backend_error(self,message):
+        self.status('Hata: '+str(message))
+        self._state['running']=False
+        self.release_backend()
+
+    def _backend_closed(self):
+        if self.backend is not None and self.backend._closed:
+            self._finish_backend(self.backend)
 
     def release_backend(self,after=None):
-        if self._stopping:return
         backend=self.backend
-        def finish():
-            if backend:
-                backend.usage_monitor.close()
-                if getattr(backend,'_selector',None):backend._selector.close()
-                backend.overlay.close();backend.settings_dialog.close()
-                if backend.hotkeys:backend.hotkeys.stop()
-                backend.deleteLater()
-            self.backend=None;self._stopping=False;self._state['running']=False;self.changed.emit()
+        if backend is None:
+            self._state['running']=False;self._stopping=False;self.changed.emit()
             if after:after()
-        if backend and backend.thread is not None and backend.thread.isRunning():
-            self._stopping=True;self.status('Modeller kapatılıyor…')
-            backend.thread.finished.connect(finish)
-            backend.worker.stop();backend.thread.quit()
-        else: finish()
+            return
+        if self._stopping:return
+        self.backend=None
+        self._stopping=True
+        self.status('Modeller kapatılıyor…')
+        if not hasattr(backend,'shutdown'):
+            self._finish_backend(backend,after);return
+        backend.closed.connect(lambda:self._finish_backend(backend,after))
+        backend.shutdown()
+        if getattr(backend,'_closed',False):
+            self._finish_backend(backend,after)
+
+    def _finish_backend(self,backend,after=None):
+        if getattr(backend,'_released',False):return
+        backend._released=True
+        self._stopping=False
+        self._state['running']=False
+        self.changed.emit()
+        backend.deleteLater()
+        if after:after()
 
     @Slot(str,'QVariant')
     def setting(self,key,value):
@@ -250,37 +339,64 @@ class Controller(QObject):
                  'source_lang':tuple(LANGS),'translation_backend':('cpu','nvidia','amd','intel'),
                  'ocr_backend':('cpu','nvidia','amd','intel'),'manga_backend':('cpu','nvidia','amd','intel'),
                  'translation_model':('nllb-200-distilled-600M-ct2','nllb-1.3b-baglam-v3'),
-                 'theme':('white','black','sepia','navy','gray'), 'font_family':('Segoe UI','Comic Sans MS','Arial'),
+                 'font_family':tuple(self._font_choices()),'ocr_engine':('auto','manga_ocr','paddleocr'),
+                 'manga_device':('auto','cuda','cpu'),
                  'speed_preset':('fast','balanced','quality')}
-        booleans=('use_manga_ocr','check_updates','show_gpu_usage','show_vram_usage','show_cpu_usage','show_system_usage','font_bold','scroll_tracking','session_context','chinese_translation_via_english','share_translations')
+        booleans=('use_manga_ocr','check_updates','show_gpu_usage','show_vram_usage','show_cpu_usage','show_system_usage','font_bold','scroll_tracking','session_context','chinese_translation_via_english','share_translations','paddle_mobile','bubble_detection')
+        live=('ocr_engine','paddle_mobile','bubble_detection','manga_device','use_manga_ocr',
+              'chinese_translation_via_english','scroll_tracking','session_context','poll_ms','settle_ms')
         if key in choices and value not in choices[key]:return
         if key in booleans:value=bool(value)
         elif key=='overlay_opacity':value=max(.3,min(1.,float(value)))
         elif key=='max_font_px':value=max(10,min(96,int(value)))
+        elif key=='min_font_px':value=max(4,min(int(value),self.settings.max_font_px))
+        elif key=='box_padding':value=max(0,min(16,int(value)))
+        elif key=='poll_ms':value=max(10,min(1000,int(value)))
+        elif key=='settle_ms':value=max(0,min(2000,int(value)))
         elif key not in choices:return
-        visual=key in ('panel_theme','overlay_opacity','font_family','max_font_px','font_bold','show_gpu_usage','show_vram_usage','show_cpu_usage')
+        if key=='paddle_mobile' and not value and not self._paddle_server_available():
+            self.status('paddleocr sunucu modelleri kurulu değil · modeller ekranından indir.');return
+        if key=='manga_device' and not self._manga_device_enabled():
+            self.status('manga-ocr cihazı yalnızca yerel japonca manga-ocr için geçerlidir.');return
+        visual=key in ('panel_theme','overlay_opacity','font_family','max_font_px','min_font_px',
+                       'box_padding','font_bold','show_gpu_usage','show_vram_usage','show_cpu_usage')
         if ((self.job and not self._job_read_only) or self._stopping) and not visual:self.status('İşlem tamamlandıktan sonra ayarı değiştirebilirsiniz.');return
         if key=='source_lang':
             # The worker switches OCR on its own thread. Keep the translator,
             # reading region and active session alive while the menu updates.
             self.settings.source_lang=value
-            if self.backend:
-                index=self.backend.cb_lang.findData(value)
-                self.backend.cb_lang.setCurrentIndex(index)
-                self.settings.use_manga_ocr=self.backend.s.use_manga_ocr
+            if value=='ja' and not self.settings.use_manga_ocr:
+                self.settings.use_manga_ocr=True
+            if self.backend:self.backend.set_language(value)
             self.settings.save();self.changed.emit()
             self.status('kaynak dil değiştirildi · '+LANGS[value]['name'])
             return
-        if self._state['running'] and not visual:self.status('Bu ayarı değiştirmeden önce çeviriyi durdurun.');return
-        if self.backend and not visual:
+        if self._state['running'] and not visual and key not in live:
+            self.status('Bu ayarı değiştirmeden önce çeviriyi durdurun.');return
+        if self.backend and not visual and key not in live:
             self.release_backend(lambda:self.setting(key,value));return
         setattr(self.settings,key,value)
+        if self.backend is not None and getattr(self.backend,'s',self.settings) is not self.settings:
+            setattr(self.backend.s,key,value)
+        if key=='max_font_px' and self.settings.min_font_px>value:
+            self.settings.min_font_px=value
         if key in ('show_gpu_usage','show_vram_usage','show_cpu_usage'):
             self.settings.usage_preferences_set=True
-        if self.backend and visual:
-            setattr(self.backend.s,key,value)
-            if key in ('overlay_opacity','font_family','max_font_px','font_bold'):self.backend.overlay.refresh_style()
-        if key=="speed_preset":self.settings.apply_preset(value)
+        if key=='speed_preset':
+            self.settings.apply_preset(value)
+        if self.backend:
+            if key in ('overlay_opacity','font_family','max_font_px','min_font_px','box_padding','font_bold'):
+                apply_visual=getattr(self.backend,'apply_visual',None)
+                if apply_visual:apply_visual()
+                else:self.backend.overlay.refresh_style()
+            elif key=='ocr_engine':self.backend.apply_ocr_engine(value)
+            elif key=='paddle_mobile':self.backend.apply_paddle_model(value)
+            elif key=='bubble_detection':self.backend.apply_bubble_detection(value)
+            elif key=='manga_device':self.backend.apply_manga_device(value)
+            elif key=='use_manga_ocr':self.backend.apply_manga_enabled(value)
+            elif key=='chinese_translation_via_english':self.backend.apply_chinese_translation(value)
+            elif key=='scroll_tracking':self.backend.apply_scroll_tracking(value)
+            elif key=='session_context':self.backend.reset_context_enabled(value)
         self.settings.save()
         enabled=any((self.settings.show_gpu_usage,self.settings.show_vram_usage,self.settings.show_cpu_usage))
         self.monitor.set_enabled(enabled and self.settings.show_gpu_usage,enabled and self.settings.show_vram_usage,enabled and self.settings.show_cpu_usage)
@@ -310,6 +426,8 @@ class Controller(QObject):
                     if missing:
                         self.status('Önce bu bileşenleri kurun: '+', '.join(missing));self.navigate.emit(2);return
                 backend=self.ensure_backend()
+                if backend is None:
+                    self.status('önce devam eden işlemin tamamlanmasını bekle.');return
                 if name=='region':backend.select_region(False)
                 elif name=='full':backend._select_fullscreen()
                 elif name=='overlay':backend.toggle_overlay_visible()
@@ -322,7 +440,7 @@ class Controller(QObject):
                 self.navigate.emit(2)
                 self.release_backend(lambda:self.start_job(lambda emit:service.automatic_setup(replace(self.settings),emit),self.automatic_setup_done))
             elif name=='clear-context':
-                if self.backend:self.backend._clear_context()
+                if self.backend:self.backend.clear_context()
                 else:self.status('Konuşma hafızası boş.')
             elif name=='validate':
                 self._state.update(operationTitle='model testi',phase='seçili ortamlar kontrol ediliyor…',validation=[],validationSummary='model testi sürüyor…',progress=0)

@@ -85,21 +85,33 @@ def initialize(args, progress=lambda phase:None):
             raise RuntimeError('CUDA çeviri testi başarısız; CPU seçeneği kullanılabilir.')
         return model.device, lambda p: model._translate_texts(p['texts'],p['source'],p['target'],p['beam'])
     if args.task == 'ocr':
+        if not args.paddle_mobile and args.backend in ('amd','intel'):
+            raise ValueError('sunucu ocr modelleri yalnızca cpu ve nvidia arka uçlarında desteklenir; mobil modelleri seçin.')
         progress('ocr kütüphaneleri yükleniyor · ilk açılış uzun sürebilir')
         import numpy as np
         from paddleocr import PaddleOCR
         from installer.catalog import OCR_NAMES
         models = DATA_ROOT/'models/ocr'
-        rec = OCR_NAMES['korean'] if args.language=='ko' else OCR_NAMES['recognition']
+        mobile = bool(args.paddle_mobile)
+        detection = OCR_NAMES['detection'] if mobile else OCR_NAMES['detection_server']
+        # PaddleOCR ships no separate server recognizer for Korean; keep the
+        # Korean recognizer and switch only the detector instead of silently
+        # pretending a server model was used.
+        rec = OCR_NAMES['korean'] if args.language=='ko' else (
+            OCR_NAMES['recognition'] if mobile else OCR_NAMES['recognition_server'])
         config = dict(use_doc_orientation_classify=False,use_doc_unwarping=False,
                       use_textline_orientation=args.language!='ko',
-                      text_detection_model_name=OCR_NAMES['detection'],text_recognition_model_name=rec,
+                      text_detection_model_name=detection,text_recognition_model_name=rec,
                       text_det_limit_type='max',text_det_limit_side_len=max(1280,min(2560,args.canvas)),
                       text_det_box_thresh=.35,text_rec_score_thresh=.12)
         family = 'transformers' if args.backend in ('amd','intel') else 'paddle'
-        for key,name in [('text_detection_model_dir',OCR_NAMES['detection']),('text_recognition_model_dir',rec)]:
+        for key,name in [('text_detection_model_dir',detection),('text_recognition_model_dir',rec)]:
             path=models/family/name
-            if not path.is_dir(): raise FileNotFoundError('OCR modeli eksik: '+str(path))
+            if not path.is_dir():
+                raise FileNotFoundError(
+                    'paddleocr modeli eksik: '+name+' · modeller ekranından '+
+                    ('paddleocr mobil modelleri' if mobile else 'paddleocr sunucu modelleri')+
+                    ' bileşenini kurun.')
             config[key]=str(path)
         if config['use_textline_orientation']:
             config['textline_orientation_model_dir']=str(models/family/OCR_NAMES['orientation'])
@@ -156,18 +168,48 @@ def initialize(args, progress=lambda phase:None):
     return device,infer
 
 
+def runtime_adapter_metadata(args, device):
+    """Report initialized device identity without importing another ML runtime."""
+    value=str(device).lower()
+    backend='cpu' if value.startswith('cpu') else args.backend
+    try:index=int(value.split(':',1)[1]) if ':' in value else 0
+    except ValueError:index=0
+    result=dict(backend=backend,device_index=max(0,index))
+    if backend=='cpu':return result
+    try:
+        torch=sys.modules.get('torch')
+        props=None
+        if torch is not None:
+            api=getattr(torch,'xpu' if backend=='intel' else 'cuda',None)
+            if api is not None:props=api.get_device_properties(index)
+        if props is None:
+            paddle=sys.modules.get('paddle')
+            if paddle is not None:props=paddle.device.cuda.get_device_properties(index)
+        name=getattr(props,'name',None)
+        identity=getattr(props,'uuid',None)
+        if isinstance(name,str) and name:result['name']=name
+        if isinstance(identity,bytes) and len(identity)==16:
+            import uuid
+            identity=str(uuid.UUID(bytes=identity))
+        if identity:result['uuid']=str(identity)
+    except Exception:
+        pass  # Telemetry identity is optional and must not fail inference startup.
+    return result
+
+
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--task',choices=['translate','ocr','manga'],required=True)
     parser.add_argument('--backend',choices=['cpu','nvidia','amd','intel'],required=True)
     parser.add_argument('--canvas',type=int,default=1600)
     parser.add_argument('--language',default='en');parser.add_argument('--model',default='')
+    parser.add_argument('--paddle-mobile',type=int,choices=(0,1),default=1)
     args=parser.parse_args()
     protocol=sys.stdout;sys.stdout=sys.stderr
     def reply(data): protocol.write(json.dumps(data,ensure_ascii=True)+'\n');protocol.flush()
     try:
         device,infer=initialize(args,lambda phase:reply({'event':'progress','phase':phase}))
-        reply({'ok':True,'device':device, 'image_transport':'shared_memory_v1' if args.task=='ocr' and os.name=='nt' else 'png'})
+        reply({'ok':True,'device':device,'adapter':runtime_adapter_metadata(args,device), 'image_transport':'shared_memory_v1' if args.task=='ocr' and os.name=='nt' else 'png'})
     except Exception as exc:
         import traceback
         folder=DATA_ROOT/'logs';folder.mkdir(parents=True,exist_ok=True)

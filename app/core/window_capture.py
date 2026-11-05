@@ -95,6 +95,21 @@ class WindowsUnderlayCapture:
             if dc:self.gdi.DeleteDC(dc)
             if screen:self.user.ReleaseDC(None,screen)
 
+    @staticmethod
+    def _owned_handles(value):
+        """Accept one HWND or the atomic tuple produced by a multi-screen overlay."""
+        if value is None:return frozenset()
+        if isinstance(value,int):return frozenset((value,))
+        try:return frozenset(int(item) for item in value)
+        except (TypeError,ValueError):return frozenset()
+
+    @staticmethod
+    def _owned_positions(windows,owned):
+        """Return owned enum positions, or None when other windows interleave."""
+        positions=[index for index,hwnd in enumerate(windows) if hwnd in owned]
+        if positions and max(positions)-min(positions)+1!=len(positions):return None
+        return positions
+
     def restore(self,image,left,top,overlay_hwnd,areas):
         height,width=image.shape[:2]
         missing=np.zeros((height,width),dtype=bool)
@@ -108,9 +123,16 @@ class WindowsUnderlayCapture:
         def collect(hwnd,param):
             windows.append(int(hwnd));return True
         if not self.user.EnumWindows(collect,0):return None
+        owned=self._owned_handles(overlay_hwnd)
+        positions=[index for index,hwnd in enumerate(windows) if hwnd in owned]
+        # Our surfaces are created as one always-on-top cohort and should be
+        # contiguous. If another topmost window is interleaved between them, the
+        # per-pixel z-order is ambiguous: fail closed and let the caller hide
+        # the whole overlay instead of restoring pixels from the wrong window.
+        if positions and max(positions)-min(positions)+1!=len(positions):return None
         result=image.copy();behind=False
         for hwnd in windows:
-            if hwnd==overlay_hwnd:
+            if hwnd in owned:
                 behind=True;continue
             if not self.user.IsWindowVisible(hwnd) or self.user.IsIconic(hwnd):continue
             cloaked=W.DWORD()

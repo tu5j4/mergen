@@ -153,7 +153,8 @@ def order_boxes(boxes: list[Box], allow_vertical_rtl: bool) -> list[Box]:
     avg_h = sum(b.h for b in boxes) / len(boxes)
     rows: list[list[Box]] = []
     for b in sorted(boxes, key=lambda b: b.cy):
-        if rows and abs(rows[-1][0].cy - b.cy) < avg_h * 0.5:
+        if (rows and abs(rows[-1][0].cy - b.cy) < avg_h * 0.5
+                and all(_ov(r.x1, r.x2, b.x1, b.x2) <= 0.25 * min(r.w, b.w) for r in rows[-1])):
             rows[-1].append(b)
         else:
             rows.append([b])

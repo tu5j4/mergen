@@ -8,6 +8,7 @@ import io
 import json
 import os
 import sys
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -55,7 +56,26 @@ def main():
                 'peak_allocated_mib': torch.cuda.max_memory_allocated(),
                 'peak_reserved_mib': torch.cuda.max_memory_reserved()}.items()}
 
-        reply({'ok': True, 'device': device, 'pid': os.getpid(), 'stats': stats()})
+        def adapter_metadata():
+            if not cuda:
+                return {'backend': 'cpu', 'device_index': 0}
+            result = {'backend': 'amd' if torch.version.hip else 'nvidia', 'device_index': 0}
+            try:
+                properties = torch.cuda.get_device_properties(0)
+                name = getattr(properties, 'name', None)
+                identity = getattr(properties, 'uuid', None)
+                if isinstance(name, str) and name:
+                    result['name'] = name
+                if isinstance(identity, bytes) and len(identity) == 16:
+                    identity = str(uuid.UUID(bytes=identity))
+                if identity:
+                    result['uuid'] = str(identity)
+            except Exception:
+                pass
+            return result
+
+        reply({'ok': True, 'device': device, 'pid': os.getpid(), 'stats': stats(),
+               'adapter': adapter_metadata()})
     except Exception as exc:
         reply({'ok': False, 'error': str(exc)})
         return
