@@ -1,4 +1,4 @@
-"""Fixed model file operations use stdlib; online recovery lazily verifies signed metadata."""
+"""Reuse verified local models or restore them from the fixed central model depot."""
 import argparse
 import hashlib
 import json
@@ -6,19 +6,14 @@ import os
 from pathlib import Path
 import re
 import shutil
-import subprocess
 import sys
-import urllib.request
-import urllib.parse
 import uuid
 
 from installer.manager import owned_path
-from app.storage import VERSION, REPOSITORY
+from scripts.restore_packed_models import provision as provision_models
 
 # Model bytes intentionally remain the original fixed model package.
 MODEL_RELEASE = '0.5.0'
-INSTALL_ARGUMENTS = ('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-')
-BOOTSTRAP_SPACE = 20 * 1024**3
 COPY_RESERVE = 256 * 1024**2
 
 
@@ -32,7 +27,7 @@ def normal_root(value):
 
 
 def manifest_rows(path):
-    data = json.loads(Path(path).read_text(encoding='utf-8'))
+    data = path if isinstance(path, dict) else json.loads(Path(path).read_text(encoding='utf-8'))
     if data.get('schema') != 1 or data.get('release') != MODEL_RELEASE:
         raise ValueError('kaynak model manifesti bu sürümle eşleşmiyor')
     rows = {}
@@ -93,93 +88,37 @@ def copy_verified(source, target, row):
         temporary.unlink(missing_ok=True)
 
 
-def bootstrap_descriptor():
-    # certifi/cryptography are required only for online recovery, after UI setup.
-    from app import updates
-    prefix = 'https://github.com/'+REPOSITORY+'/releases/download/v'+VERSION+'/'
-    envelope = updates.request_json(updates.trusted_url(prefix+'mergen-update.json'))
-    payload = updates.verify(envelope)
-    if payload['version'] != VERSION:
-        raise ValueError('kurulum bildirimi kaynak uygulama sürümüyle eşleşmiyor')
-    files = updates.package_files(payload)
-    release_directory = '/'+REPOSITORY+'/releases/download/v'+VERSION
-    if any(urllib.parse.urlsplit(row['url']).path.rsplit('/', 1)[0] != release_directory for row in files):
-        raise ValueError('kurulum dosyaları kaynak uygulama sürümüne ait değil')
-    return files
-
-
-def download_bootstrap(target, row):
-    from app import updates
-    if matches(target, row):
-        return
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(target.name + '.download-' + uuid.uuid4().hex)
-    try:
-        request = urllib.request.Request(updates.trusted_url(row['url']), headers={'User-Agent': 'mergen-source-setup/'+VERSION})
-        with urllib.request.urlopen(request, timeout=90, context=updates.tls_context()) as response, temporary.open('xb') as out:
-            if not response.geturl().startswith('https://'):
-                raise RuntimeError('kurulum indirmesi güvenli bağlantı kullanmıyor')
-            size = 0
-            while block := response.read(64 * 1024):
-                size += len(block)
-                if size > row['bytes']:
-                    raise RuntimeError('kurulum başlatıcısı beklenenden büyük')
-                out.write(block)
-        if not matches(temporary, row):
-            raise RuntimeError('kurulum başlatıcısının boyutu veya sha256 özeti eşleşmiyor')
-        os.replace(temporary, target)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-def run_bootstrap(path):
-    env = dict(os.environ)
-    for key in ('MERGEN_DATA_DIR', 'PYTHONHOME', 'PYTHONPATH', 'VIRTUAL_ENV'):
-        env.pop(key, None)
-    subprocess.run([str(path), *INSTALL_ARGUMENTS], env=env, check=True, timeout=7200)
-
-
-def provision(target_root, installed_root, manifest, emit=print):
+def provision(target_root, installed_root, manifest, emit=print, packed_manifest=None):
     target = normal_root(target_root)
     installed = normal_root(installed_root)
-    rows = manifest_rows(manifest)
+    bundled = json.loads(Path(manifest).read_text(encoding='utf-8'))
+    rows = manifest_rows(bundled)
     emit('kaynak için sabit model dosyaları doğrulanıyor')
     needed = missing(target, rows)
     if not needed:
-        emit('kaynak model dosyaları zaten hazır; kurulum tekrar çalıştırılmadı')
-        return {'copied': 0, 'bootstrap': False, 'files': len(rows)}
-    copy_bytes = sum(row['bytes'] for row in needed)
-    ensure_space(target, copy_bytes + COPY_RESERVE)
-    bootstrap = bool(missing(installed, needed))
-    if bootstrap:
-        # Reserve the installer/parts/archive peak plus the source copy if on one volume.
-        same_volume = target.anchor.casefold() == installed.anchor.casefold()
-        ensure_space(installed, BOOTSTRAP_SPACE + (copy_bytes if same_volume else 0))
-        emit('sabit modeller eksik; bu uygulama sürümünün imzalı kurulum bildirimi doğrulanıyor')
-        files = bootstrap_descriptor()
-        installers = []
-        for row in files:
-            name = urllib.parse.urlsplit(row['url']).path.rsplit('/', 1)[-1]
-            installer = owned_path(target, 'downloads/'+VERSION+'/'+name)
-            download_bootstrap(installer, row)
-            installers.append(installer)
-        run_bootstrap(installers[0])
-        # The published bootstrap may exit zero after cancel/error: never trust exit alone.
-        if missing(installed, needed):
-            raise RuntimeError('resmi kurulumdan sonra sabit modeller doğrulanamadı; kaynak kurulumu tamamlanmadı')
+        emit('kaynak model dosyaları zaten hazır; yeniden indirme yapılmadı')
+        return {'copied': 0, 'downloaded': False, 'files': len(rows)}
+    ensure_space(target, sum(row['bytes'] for row in needed) + COPY_RESERVE)
+    # Validate every installed source path before copying any file. Invalid or
+    # absent local files are repaired by the depot, never copied unchecked.
+    local = [(row, owned_path(installed, row['path'])) for row in needed]
+    available = [(row, path) for row, path in local if matches(path, row)]
     copied = 0
-    for row in needed:
-        source = owned_path(installed, row['path'])
-        destination = owned_path(target, row['path'])
-        # Source hashes were checked before installation/copy; the atomic copy
-        # checks them again while streaming, including changes after that check.
-        emit('doğrulanan model kaynak klasörüne kopyalanıyor · '+str(copied+1)+'/'+str(len(needed)))
-        copy_verified(source, destination, row)
+    for row, path in available:
+        emit('doğrulanan yerel model kaynak klasörüne kopyalanıyor · '+str(copied+1)+'/'+str(len(available)))
+        copy_verified(path, owned_path(target, row['path']), row)
         copied += 1
+    downloaded = bool(missing(target, rows))
+    if downloaded:
+        packed_path = Path(packed_manifest) if packed_manifest is not None else Path(manifest).with_name('packed-models.json')
+        packed = json.loads(packed_path.read_text(encoding='utf-8'))
+        emit('eksik sabit modeller merkezi model deposundan tamamlanıyor')
+        provision_models(target, packed, bundled, emit)
+    # Never trust a successful recovery return without checking the model bytes.
     if missing(target, rows):
-        raise RuntimeError('kaynak model doğrulaması tamamlanamadı')
+        raise RuntimeError('merkezi model deposundan sonra sabit modeller doğrulanamadı; kaynak kurulumu tamamlanmadı')
     emit('kaynak için sabit model dosyaları hazır')
-    return {'copied': copied, 'bootstrap': bootstrap, 'files': len(rows)}
+    return {'copied': copied, 'downloaded': downloaded, 'files': len(rows)}
 
 
 def main():
@@ -187,10 +126,11 @@ def main():
     parser.add_argument('--target-root', type=Path, required=True)
     parser.add_argument('--manifest', type=Path, required=True)
     parser.add_argument('--installed-root', type=Path)
+    parser.add_argument('--packed-manifest', type=Path)
     args = parser.parse_args()
     installed = args.installed_root or Path(os.environ['LOCALAPPDATA'])/'mergen-next'
     try:
-        provision(args.target_root, installed, args.manifest)
+        provision(args.target_root, installed, args.manifest, packed_manifest=args.packed_manifest)
     except Exception as exc:
         print('kaynak model kurulumu tamamlanamadı: '+str(exc), file=sys.stderr)
         return 1

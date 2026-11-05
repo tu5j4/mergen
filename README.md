@@ -1,4 +1,4 @@
-﻿# mergen · hikâyenin diline takılma
+# mergen · hikâyenin diline takılma
 
 <p align="center">
   <img src="assets/mergen-logo.png" alt="mergen logosu" width="180">
@@ -10,7 +10,7 @@ okuduğun siteyi veya görüntüleyiciyi değiştirmeden, sayfaları tek tek dı
 
 ## v0.5.2
 
-balonları bütün çevirme, kaydırmada yarım metni tamamlama ve çoklu ekran takibi iyileştirildi. ayarlar tek arayüzde toplandı; windows açılışı ve kurulum güncellendi.
+balonları bütün çevirme, kaydırmada yarım metni tamamlama ve çoklu ekran takibi iyileştirildi. ayarlar tek arayüzde toplandı; windows açılışı ve kurulum güncellendi. uygulama ve model indirmeleri ayrıldı; doğrulanmış modeller sonraki sürümlerde yeniden kullanılır.
 
 ## neler sunar?
 
@@ -37,13 +37,13 @@ mergen iki aşamada çalışır: **önce görseldeki yazıyı okur, ardından ok
 ## kurulum ve kullanım
 
 1. [güncel kurulum paketini releases bölümünden indir](https://github.com/tu5j4/mergen/releases/latest) ve uygulamayı kur.
-2. `mergen-setup-0.5.2.exe` dosyasını çalıştır. başlatıcı yaklaşık 4,16 gb kurulum verisini indirip dosya özetlerini doğrular ve kurulumu açar. standart 600m, bağlamlı 1.3b, mobil paddleocr, korece ocr ve japonca manga-ocr bu sabit paketten kurulur. kurulum sonrası donanım taranır; uygun çalışma kütüphaneleri uygulama içinden kurulur. gpu kurulumu veya gerçek model testi geçmezse cpu ile devam edilir. aynı işlem **modeller** sayfasındaki **donanımı tara ve uygun kütüphaneleri kur** düğmesinden başlatılabilir.
+2. `mergen-setup-0.5.2.exe` dosyasını çalıştır. uygulama kurulumu büyük model ağırlıklarını içermez. ilk hazırlıkta gereken sabit modeller merkezi model yayınlarından indirilir; boyutları ve sha256 özetleri doğrulanır. mevcut doğru modeller sonraki uygulama sürümlerinde yeniden indirilmez. donanım taramasından sonra uygun çalışma kütüphaneleri kurulur; gpu kurulumu veya gerçek model testi geçmezse cpu ile devam edilir. aynı işlem **modeller** sayfasından başlatılabilir.
 3. kaynak dili seç; **bölge seç** ile okuma alanını işaretle veya **tüm ekran** seçeneğini kullan.
 4. **çeviriyi başlat** düğmesine bas ve okumaya devam et. gerekirse **şimdi çevir** ile yeniden dene.
 
 `ctrl+alt+t` çeviriyi başlatır/durdurur; `ctrl+alt+h` çeviri katmanını gizler/gösterir.
 
-windows 10/11 x64, avx destekli işlemci ve kurulum sırasında geçici dosyalar dahil yeterli boş alan gerekir. model paketi ve çalışma kütüphanelerinin ilk kurulumu internet bağlantısı gerektirir. paketlenmiş modeller uygulama içinden güncel hub ağırlıklarıyla değiştirilmez; model değişiklikleri yeni mergen sürüm paketleriyle dağıtılır. hız ve bellek kullanımı seçilen model ve donanıma; çeviri sonucu da metnin doğru okunmasına bağlıdır. küçük, stilize veya düşük çözünürlüklü yazılarda sonuçlar değişebilir.
+windows 10/11 x64, avx destekli işlemci ve kurulum sırasında geçici dosyalar dahil yeterli boş alan gerekir. model paketi ve çalışma kütüphanelerinin ilk kurulumu internet bağlantısı gerektirir. model adresleri ve dosya özetleri sabittir; değişken hub ağırlıkları kullanılmaz. model yayınları uygulama sürümünden bağımsızdır; aynı büyük nllb dosyaları her uygulama güncellemesi için tekrar yayımlanmaz. hız ve bellek kullanımı seçilen model ve donanıma; çeviri sonucu da metnin doğru okunmasına bağlıdır. küçük, stilize veya düşük çözünürlüklü yazılarda sonuçlar değişebilir.
 
 ## bağlamlı çeviri
 
@@ -51,6 +51,6 @@ windows 10/11 x64, avx destekli işlemci ve kurulum sırasında geçici dosyalar
 
 ## kaynak kod ve lisans
 
-kaynak koddan çalıştırmak için `kurulum.bat`, ardından `baslat.bat` dosyasını kullan. kurulum, bu sürümün sabit modellerini önce yerel tam kurulumdan doğrulayıp kaynak `.data` klasörüne kopyalar; eksikler varsa kaynak uygulamayla aynı sürümün imzalı bildirimini doğrulayıp bildirimin boyut ve sha256 ile tanımladığı resmi kurulumu otomatik çalıştırır. kaynak modelleri zaten doğruysa tam kurulum tekrar çalıştırılmaz. python ve arayüz ortamları uygulamaya özeldir; sistem python’u ve ekran kartı sürücüleri değiştirilmez. ayrıntılar: [kurulum](docs/kurulum.md) · [derleme](docs/derleme.md).
+kaynak koddan çalıştırmak için `kurulum.bat`, ardından `baslat.bat` dosyasını kullan. kurulum kaynak `.data` klasöründeki modelleri doğrular, kurulu uygulamadaki doğru kopyalardan yararlanır ve eksikleri aynı merkezi sabit model yayınlarından sağlar. modeller zaten doğruysa büyük ağırlıklar yeniden indirilmez. kaynak ve kurulu uygulamanın ayrı model kopyaları ayrı yer kaplar. python ve arayüz ortamları uygulamaya özeldir; sistem python ve ekran kartı sürücüleri değiştirilmez. ayrıntılar: [kurulum](docs/kurulum.md) · [derleme](docs/derleme.md).
 
 uygulama kodu mit lisanslıdır. nllb modelleri cc-by-nc 4.0 lisansıyla ticari olmayan kullanım içindir. diğer modeller ve kütüphaneler için [üçüncü taraf bildirimlerine](THIRD_PARTY_NOTICES.md) bakabilirsin.

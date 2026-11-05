@@ -10,7 +10,8 @@
       "archive_bytes": 1089431304,
       "archive_sha256": "a1ce4df82ec7a363b096af57a834cfe417611d295d2e8ff3982c20f1d6d8086a",
       "width": 4,
-      "chunk": 33554432
+      "chunk": 33554432,
+      "url": "https://github.com/tu5j4/nllb-mergen-baglam-v1/releases/download/mergen-models-0.5.0/mergen-models-0.5.0-600m.xz"
     },
     {
       "path": "models/nllb-1.3b-baglam-v3/base-bf16/model.safetensors",
@@ -20,7 +21,8 @@
       "archive_bytes": 1870070044,
       "archive_sha256": "c0c9e5522b300ba006a0dafcfb575e7c5af72a9d2021bebfe70318c9dd1b90d6",
       "width": 2,
-      "chunk": 33554432
+      "chunk": 33554432,
+      "url": "https://github.com/tu5j4/nllb-mergen-baglam-v1/releases/download/v1.0.0/nllb-mergen-baglam-v1-base.xz"
     },
     {
       "path": "models/manga/pytorch_model.bin",
@@ -30,7 +32,8 @@
       "archive_bytes": 374411000,
       "archive_sha256": "aae964cb1c0261d2aab8c2fed1608c6e023b1be6b4edfd88ef2b63b581d894f8",
       "width": 4,
-      "chunk": 33554432
+      "chunk": 33554432,
+      "url": "https://github.com/tu5j4/nllb-mergen-baglam-v1/releases/download/mergen-models-0.5.0/mergen-models-0.5.0-manga.xz"
     },
     {
       "path": "models/nllb-1.3b-baglam-v3/adapter-masked/adapter_model.safetensors",
@@ -40,7 +43,15 @@
       "archive_bytes": 78760224,
       "archive_sha256": "9f76c5119ef08abf0694ea6f1aab28b7e3e6d3be8245534c7c93a2165f9f45aa",
       "width": 4,
-      "chunk": 33554432
+      "chunk": 33554432,
+      "url": "https://github.com/tu5j4/nllb-mergen-baglam-v1/releases/download/v1.0.0/nllb-mergen-baglam-v1-adapter.xz"
     }
-  ]
+  ],
+  "support": {
+    "archive": "mergen-model-support-0.5.0.zip",
+    "archive_bytes": 632599342,
+    "archive_sha256": "cbd6ef06074c841857fb0d25038ef2fe52f1aa34e96d40a05c089d0b66d64760",
+    "url": "https://github.com/tu5j4/nllb-mergen-baglam-v1/releases/download/mergen-models-0.5.0/mergen-model-support-0.5.0.zip"
+  },
+  "model_release": "0.5.0"
 }
