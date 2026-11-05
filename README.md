@@ -8,9 +8,21 @@ mergen; **manga, manhwa, manhua, webtoon ve çizgi romanları türkçe okumayı 
 
 okuduğun siteyi veya görüntüleyiciyi değiştirmeden, sayfaları tek tek dışa aktarmadan okumaya devam edebilirsin. çeviri katmanı tıklamalarını engellemez; sayfayı kaydırırken çeviri alanı takip edilir. kurulum paketi ve çalışma kütüphaneleri hazırlandıktan sonra metin tanıma ve çeviri bilgisayarında çalışır.
 
-## v0.5.2
+## ekran görüntüleri
 
-balonları bütün çevirme, kaydırmada yarım metni tamamlama ve çoklu ekran takibi iyileştirildi. ayarlar tek arayüzde toplandı; windows açılışı ve kurulum güncellendi. uygulama ve model indirmeleri ayrıldı; doğrulanmış modeller sonraki sürümlerde yeniden kullanılır.
+**çeviri öncesi**
+
+![mergen ile çeviri öncesi ekran görünümü](assets/screenshots/mergen1.png)
+
+**kontrol paneli**
+
+<p align="center">
+  <img src="assets/screenshots/mergen2.png" alt="mergen kontrol paneli" width="520">
+</p>
+
+**çeviri sonrası**
+
+![mergen ile türkçe çeviri katmanı](assets/screenshots/mergen3.png)
 
 ## neler sunar?
 
